@@ -25,6 +25,7 @@ namespace FastBoot.ConfigParsing
         private const string KspcfLoadPrefix = "ConfigNode_Load_Prefix";
 
         private static KspCfg kspcfg;
+        private static Harmony harmony;
         private static Prefetch prefetch;
         private static Func<List<string[]>, ConfigNode> recurseFormat;
         private static string gameDataKey;
@@ -38,8 +39,11 @@ namespace FastBoot.ConfigParsing
         public static bool Installed { get; private set; }
         public static bool KspcfGuarded { get; private set; }
 
+        /// Installs the parser. Idempotent: the early-start loader and the normal addon may both call it.
         public static bool Install(string gameDataDir, string nativePath, int threads)
         {
+            if (Installed)
+                return true;
             string error;
             kspcfg = KspCfg.Load(nativePath, out error);
             if (kspcfg == null)
@@ -58,15 +62,11 @@ namespace FastBoot.ConfigParsing
             recurseFormat = (Func<List<string[]>, ConfigNode>)Delegate.CreateDelegate(typeof(Func<List<string[]>, ConfigNode>), rf);
             gameDataKey = PathKey.Of(gameDataDir).TrimEnd('\\') + "\\";
 
-            var harmony = new Harmony(HarmonyId);
+            harmony = new Harmony(HarmonyId);
             try
             {
-                MethodInfo kspcf = FindKspcfLoadPrefix();
-                if (kspcf != null)
-                {
-                    harmony.Patch(kspcf, new HarmonyMethod(Own("SkipWhenHandled")));
-                    KspcfGuarded = true;
-                }
+                foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies())
+                    GuardIfKspcf(a);
                 var prefix = new HarmonyMethod(Own("LoadPrefix")) { priority = Priority.First };
                 harmony.Patch(load, prefix);
             }
@@ -77,10 +77,47 @@ namespace FastBoot.ConfigParsing
                 Log.Warning("config parser disabled, ConfigNode.Load unchanged: " + ex);
                 return false;
             }
+            // Installed by the early-start loader, KSPCF is not loaded yet: guard it the moment it loads, before
+            // any of its code runs.
+            if (!KspcfGuarded)
+                AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
             prefetch = Prefetch.Start(kspcfg, gameDataDir, threads);
             Installed = true;
-            Log.Info("config parser installed (" + (KspcfGuarded ? "alongside KSPCommunityFixes" : "standalone") + ", "
-                + threads + " prefetch threads)");
+            Log.Info("config parser installed (" + (KspcfGuarded ? "alongside KSPCommunityFixes" : "KSPCommunityFixes not loaded yet")
+                + ", " + threads + " prefetch threads)");
+            return true;
+        }
+
+        private static void OnAssemblyLoad(object sender, AssemblyLoadEventArgs e)
+        {
+            try
+            {
+                if (GuardIfKspcf(e.LoadedAssembly))
+                {
+                    AppDomain.CurrentDomain.AssemblyLoad -= OnAssemblyLoad;
+                    Log.Info("config parser now guarding KSPCommunityFixes' ConfigNode.Load prefix");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("could not guard KSPCommunityFixes' ConfigNode.Load prefix; cfg files may be parsed twice: " + ex.Message);
+            }
+        }
+
+        /// Patches KSPCF's Load prefix to skip calls FastBoot served. True if `a` is KSPCF and was guarded.
+        private static bool GuardIfKspcf(Assembly a)
+        {
+            if (KspcfGuarded || a.GetName().Name != "KSPCommunityFixes")
+                return false;
+            Type t = a.GetType(KspcfType, false);
+            MethodInfo m = t == null ? null : t.GetMethod(KspcfLoadPrefix, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
+            if (m == null)
+            {
+                Log.Warning("KSPCommunityFixes has no " + KspcfType + "." + KspcfLoadPrefix + "; not guarding it");
+                return false;
+            }
+            harmony.Patch(m, new HarmonyMethod(Own("SkipWhenHandled")));
+            KspcfGuarded = true;
             return true;
         }
 
@@ -95,17 +132,6 @@ namespace FastBoot.ConfigParsing
             return typeof(ConfigLoadPatch).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic);
         }
 
-        private static MethodInfo FindKspcfLoadPrefix()
-        {
-            foreach (Assembly a in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                if (a.GetName().Name != "KSPCommunityFixes")
-                    continue;
-                Type t = a.GetType(KspcfType, false);
-                return t == null ? null : t.GetMethod(KspcfLoadPrefix, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-            }
-            return null;
-        }
 
         // Prefix on ConfigNode.Load(string, bool).
         private static bool LoadPrefix(string fileFullName, bool bypassLocalization, ref ConfigNode __result)

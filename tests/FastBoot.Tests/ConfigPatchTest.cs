@@ -73,7 +73,7 @@ namespace FastBoot.Tests
             Console.WriteLine("{0} files: {1} equal to stock, {2} equal to the pre-FastBoot result only, {3} wrong; {4:F2}s",
                 files.Length, asStock, asBefore, wrong, seconds);
             Console.WriteLine(ConfigLoadPatch.Stats());
-            int declined = DeclinedCount();
+            int declined = Counter("declined");
             bool noDoubleParse = perf == null || readsDuringCfgLoads == declined;
             if (perf != null)
                 Console.WriteLine("KSPCF's parser ran {0} times for cfg files; FastBoot declined {1}: {2}",
@@ -84,14 +84,14 @@ namespace FastBoot.Tests
             return wrong == 0 && cacheDiff == null && again == null && noDoubleParse ? 0 : 1;
         }
 
-        private static Type LoadKspcf(Options o)
+        internal static Type LoadKspcf(Options o)
         {
             Assembly a = Assembly.LoadFrom(Path.Combine(Path.Combine(Path.Combine(o.GameData, "KSPCommunityFixes"), "Plugins"), "KSPCommunityFixes.dll"));
             return a.GetType("KSPCommunityFixes.Performance.ConfigNodePerf", true);
         }
 
         /// KSPCF 1.41.1's ConfigNodePerf.Awake, minus DontDestroyOnLoad and the two save-scene clean toggles.
-        private static void ApplyKspcf(Type perf)
+        internal static void ApplyKspcf(Type perf)
         {
             var h = new Harmony("ConfigNodePerf");
             Func<string, HarmonyMethod> pre = name => new HarmonyMethod(perf.GetMethod(name, Private));
@@ -108,7 +108,7 @@ namespace FastBoot.Tests
             h.Patch(AccessTools.Method(typeof(ConfigNode.ValueList), "Add"), pre("ConfigNodeValueList_Add_Prefix"));
         }
 
-        private static void CountKspcfReads(Type perf)
+        internal static void CountKspcfReads(Type perf)
         {
             new Harmony("FastBoot.Tests").Patch(perf.GetMethod("ReadFile", Private),
                 new HarmonyMethod(typeof(ConfigPatchTest).GetMethod("OnKspcfRead", Private)));
@@ -119,9 +119,13 @@ namespace FastBoot.Tests
             kspcfReads++;
         }
 
-        private static int DeclinedCount()
+        /// How many times KSPCF's own parser ran since CountKspcfReads.
+        internal static int KspcfReads { get { return kspcfReads; } }
+
+        /// One of ConfigLoadPatch's private counters.
+        internal static int Counter(string field)
         {
-            return (int)typeof(ConfigLoadPatch).GetField("declined", Private).GetValue(null);
+            return (int)typeof(ConfigLoadPatch).GetField(field, Private).GetValue(null);
         }
     }
 }

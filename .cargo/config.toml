@@ -1,0 +1,4 @@
+# Link the C runtime statically on Windows. version.dll loads before the game itself, so a missing Visual C++
+# runtime there would stop KSP from starting at all; kspcfg.dll and the tools get the same guarantee.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

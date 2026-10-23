@@ -1,0 +1,12 @@
+[package]
+name = "fastboot-early"
+description = "Optional early-start loader for FastBoot: a version.dll proxy that starts FastBoot's config parser before KSP's first config scan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# Unity's player imports VERSION.dll, so a DLL of that name next to KSP_x64.exe is loaded with it.
+name = "version"
+path = "src/lib.rs"
+crate-type = ["cdylib"]

@@ -6,9 +6,10 @@ using System.Threading;
 
 namespace FastBoot.ConfigParsing
 {
-    /// Pre-parses every GameData .cfg on worker threads so the main thread only builds trees. Each entry is used
-    /// at most once, and only if the file's size and timestamp still match what was parsed; anything else falls
-    /// through to a direct parse.
+    /// Pre-parses every GameData .cfg on worker threads so the main thread only builds trees. An entry is served
+    /// for as long as the file's size and timestamp still match what was parsed, so KSP's first config scan and
+    /// KSPCommunityFixes' second one both use it; anything else falls through to a direct parse. Each serve is a
+    /// fresh copy, so callers never share arrays.
     internal sealed class Prefetch
     {
         private readonly ManualResetEvent done = new ManualResetEvent(false);
@@ -17,7 +18,6 @@ namespace FastBoot.ConfigParsing
         private Dictionary<string, int> index;
         private long[] lengths;
         private long[] writeTicks;
-        private bool[] served;
 
         public readonly Stopwatch Elapsed = new Stopwatch();
 
@@ -54,7 +54,6 @@ namespace FastBoot.ConfigParsing
                     index = idx;
                     lengths = len;
                     writeTicks = ticks;
-                    served = new bool[files.Length];
                 }
             }
             catch (Exception ex)
@@ -68,7 +67,7 @@ namespace FastBoot.ConfigParsing
             }
         }
 
-        /// The pre-parsed lines for `path` if it was prefetched, unchanged and not served before; otherwise false.
+        /// The pre-parsed lines for `path` if it was prefetched and is unchanged since; otherwise false.
         /// `lines` may be null on success when kspcfg declined the file (the caller then uses the stock parser).
         public bool TryTake(string path, string key, out List<string[]> lines)
         {
@@ -77,9 +76,8 @@ namespace FastBoot.ConfigParsing
             lock (gate)
             {
                 int i;
-                if (batch == null || !index.TryGetValue(key, out i) || served[i])
+                if (batch == null || !index.TryGetValue(key, out i))
                     return false;
-                served[i] = true;
                 var fi = new FileInfo(path);
                 if (!fi.Exists || fi.Length != lengths[i] || fi.LastWriteTimeUtc.Ticks != writeTicks[i])
                     return false;

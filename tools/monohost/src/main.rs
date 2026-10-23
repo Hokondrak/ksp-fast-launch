@@ -5,7 +5,11 @@
 //! (Unity's own mscorlib) and runs a program's Main, so FastBoot's offline tests can run on the exact runtime the
 //! game uses. Nothing Unity-native is available, so only code that does not call into the engine works.
 //!
-//! Usage: monohost --ksp <KSP folder> -- <program.exe> [args...]
+//! Usage: monohost --ksp <KSP folder> [--preload <dll>]... -- <program.exe> [args...]
+//!
+//! Mono's functions are resolved through kernel32's `GetProcAddress` from monohost's own import table, as
+//! Unity's player does, so `--preload` with FastBoot's `version.dll` (and `FASTBOOT_EARLY_TARGET=monohost.exe`)
+//! runs the whole early-start chain without the game.
 
 #[cfg(windows)]
 mod host;

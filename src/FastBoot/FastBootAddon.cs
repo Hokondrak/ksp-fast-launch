@@ -9,7 +9,8 @@ using UnityEngine;
 namespace FastBoot
 {
     /// Entry point: reads settings and starts each enabled feature. Runs with the first batch of addons, after all
-    /// plugin assemblies are loaded and before KSPCommunityFixes' second config scan.
+    /// plugin assemblies are loaded and before KSPCommunityFixes' second config scan. When the optional early-start
+    /// loader is installed, the config parser was already started by StartEarly, before KSP's first scan.
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public sealed class FastBootAddon : MonoBehaviour
     {
@@ -19,12 +20,37 @@ namespace FastBoot
             Log.SetSink(s => UnityEngine.Debug.Log(s));
             string home = ModFolder();
             Settings settings = Settings.Load(Path.Combine(home, "FastBoot.cfg"));
-            Log.Info(Version() + " on " + NativeLibrary.Current + "; " + settings);
+            Log.Info(Version() + " on " + NativeLibrary.Current + "; " + settings
+                + (Early.Bootstrap.Started ? "; early start active" : ""));
 
             if (settings.Diagnostics)
                 StartDiagnostics(home, settings);
             if (settings.ConfigParser)
-                StartConfigParser(home, settings);
+            {
+                if (ConfigLoadPatch.Installed)
+                    Log.Info("config parser already running since early start");
+                else if (IsLoaded("KspFastCfg"))
+                    Log.Info("config parser skipped: the separate KspFastCfg mod is installed and already does this");
+                else
+                    StartConfigParser(home, Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), settings);
+                if (ConfigLoadPatch.Installed)
+                    GameEvents.OnGameDatabaseLoaded.Add(OnDatabaseLoaded);
+            }
+        }
+
+        /// Called by Early.Bootstrap as soon as Assembly-CSharp is loaded, before the engine runs any game code.
+        /// Must not call into Unity: only file access and Harmony.
+        internal static void StartEarly(string kspRoot)
+        {
+            string gameData = Path.Combine(kspRoot, "GameData");
+            string home = ModFolder();
+            Settings settings = Settings.Load(Path.Combine(home, "FastBoot.cfg"));
+            if (!settings.ConfigParser)
+                return;
+            // KspFastCfg's assembly is not loaded yet, so look for it on disk; Awake reports the skip.
+            if (File.Exists(Path.Combine(Path.Combine(Path.Combine(gameData, "KspFastCfg"), "Plugins"), "KspFastCfg.dll")))
+                return;
+            StartConfigParser(home, gameData, settings);
         }
 
         private void StartDiagnostics(string home, Settings settings)
@@ -39,18 +65,11 @@ namespace FastBoot
             gameObject.AddComponent<BootProfiler>();
         }
 
-        private void StartConfigParser(string home, Settings settings)
+        private static void StartConfigParser(string home, string gameData, Settings settings)
         {
-            if (IsLoaded("KspFastCfg"))
-            {
-                Log.Info("config parser skipped: the separate KspFastCfg mod is installed and already does this");
-                return;
-            }
             string native = Path.Combine(Path.Combine(Path.Combine(Path.Combine(home, "PluginData"), "native"),
                 NativeLibrary.PlatformFolder()), NativeLibrary.FileName("kspcfg"));
-            string gameData = Path.Combine(KSPUtil.ApplicationRootPath, "GameData");
-            if (ConfigLoadPatch.Install(gameData, native, settings.EffectiveThreads()))
-                GameEvents.OnGameDatabaseLoaded.Add(OnDatabaseLoaded);
+            ConfigLoadPatch.Install(gameData, native, settings.EffectiveThreads());
         }
 
         private void OnDatabaseLoaded()

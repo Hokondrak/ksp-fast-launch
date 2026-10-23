@@ -1,6 +1,7 @@
-# Builds FastBoot into dist\:
-#   dist\GameData\FastBoot\   the mod (FastBoot.dll, native kspcfg, settings, version file)
-#   dist\tools\ksplaunch.exe  the measuring launcher
+# Builds FastBoot into dist\ (cleared first):
+#   dist\GameData\FastBoot\      the mod (FastBoot.dll, native kspcfg, settings, version file)
+#   dist\EarlyStart\version.dll  optional early-start loader; goes next to KSP_x64.exe
+#   dist\tools\ksplaunch.exe     the measuring launcher
 #   tests\out\FastBoot.Tests.exe
 #
 # Usage: powershell -ExecutionPolicy Bypass -File build.ps1 -Ksp "D:\Games\KSP"   (or set KSP_DIR)
@@ -22,18 +23,22 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed with exit code $LASTEXITCODE" }
 }
 
-# 1. Rust: kspcfg (native parser) and ksplaunch.
+# 1. Rust: kspcfg (native parser), the early-start loader, ksplaunch and monohost.
 Push-Location $root
 try { Invoke-Checked "cargo build" { cargo build --release --workspace } } finally { Pop-Location }
 
-# 2. Mod layout.
-$mod = Join-Path $root "dist\GameData\FastBoot"
+# 2. Mod layout. A fresh dist\ keeps test leftovers (early.log, disable-early) out of the package.
+$dist = Join-Path $root "dist"
+if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
+$mod = Join-Path $dist "GameData\FastBoot"
 $native = Join-Path $mod "PluginData\native\win-x64"
-New-Item -ItemType Directory -Force (Join-Path $mod "Plugins"), $native, (Join-Path $root "dist\tools") | Out-Null
+$early = Join-Path $dist "EarlyStart"
+New-Item -ItemType Directory -Force (Join-Path $mod "Plugins"), $native, $early, (Join-Path $dist "tools") | Out-Null
 Copy-Item (Join-Path $root "GameData\FastBoot\*") $mod -Recurse -Force
 Copy-Item (Join-Path $root "LICENSE") (Join-Path $mod "LICENSE.txt") -Force
 Copy-Item (Join-Path $root "target\release\kspcfg.dll") $native -Force
-Copy-Item (Join-Path $root "target\release\ksplaunch.exe") (Join-Path $root "dist\tools") -Force
+Copy-Item (Join-Path $root "target\release\version.dll") $early -Force
+Copy-Item (Join-Path $root "target\release\ksplaunch.exe") (Join-Path $dist "tools") -Force
 
 # 3. FastBoot.dll, against KSP's own Unity/Mono profile assemblies.
 $refs = "mscorlib", "System", "System.Core", "UnityEngine", "UnityEngine.CoreModule", "Assembly-CSharp" |

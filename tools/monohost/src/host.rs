@@ -41,25 +41,28 @@ impl Mono {
 
 struct Args {
     ksp: PathBuf,
+    preload: Vec<PathBuf>,
     program: PathBuf,
     rest: Vec<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut ksp = None;
+    let mut preload = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--ksp" => ksp = it.next().map(PathBuf::from),
+            "--preload" => preload.push(it.next().map(PathBuf::from).ok_or("missing DLL after --preload")?),
             "--" => {
                 let program = it.next().ok_or("missing program after --")?;
                 let ksp = ksp.ok_or("missing --ksp <KSP folder>")?;
-                return Ok(Args { ksp, program: PathBuf::from(program), rest: it.collect() });
+                return Ok(Args { ksp, preload, program: PathBuf::from(program), rest: it.collect() });
             }
             _ => return Err(format!("unexpected argument {}", a)),
         }
     }
-    Err("usage: monohost --ksp <KSP folder> -- <program.exe> [args...]".into())
+    Err("usage: monohost --ksp <KSP folder> [--preload <dll>]... -- <program.exe> [args...]".into())
 }
 
 pub fn main() -> i32 {
@@ -80,6 +83,12 @@ pub fn main() -> i32 {
 }
 
 unsafe fn run(args: &Args) -> Result<i32, String> {
+    // Loaded before Mono, the way Windows loads UnityPlayer.dll's imports (FastBoot's version.dll among them).
+    for dll in &args.preload {
+        if LoadLibraryW(wide(dll).as_ptr()).is_null() {
+            return Err(format!("could not preload {}", dll.display()));
+        }
+    }
     let runtime_dir = args.ksp.join("MonoBleedingEdge").join("EmbedRuntime");
     let etc_dir = args.ksp.join("MonoBleedingEdge").join("etc");
     let managed = args.ksp.join("KSP_x64_Data").join("Managed");

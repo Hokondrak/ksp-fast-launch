@@ -4,7 +4,7 @@
 //   FastBoot.Tests.exe <command> --ksp <KSP folder> --dist <build output folder> [--cases N]
 //
 // Commands: diff, allowlist, config-patch-kspcf-first, config-patch-fastboot-first, config-patch-standalone,
-//           diagnostics
+//           diagnostics, early-chain, early-chain-off (these two only under monohost --preload version.dll)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -61,6 +61,8 @@ namespace FastBoot.Tests
                 case "config-patch-fastboot-first": return ConfigPatchTest.Run(opts, ConfigPatchTest.Scenario.FastBootFirst);
                 case "config-patch-standalone": return ConfigPatchTest.Run(opts, ConfigPatchTest.Scenario.Standalone);
                 case "diagnostics": return DiagnosticsTest.Run(opts);
+                case "early-chain": return EarlyChainTest.Run(opts, true);
+                case "early-chain-off": return EarlyChainTest.Run(opts, false);
                 default: return Usage();
             }
         }
@@ -90,7 +92,7 @@ namespace FastBoot.Tests
         private static int Usage()
         {
             Console.WriteLine("usage: FastBoot.Tests.exe <diff|allowlist|config-patch-kspcf-first|config-patch-fastboot-first|"
-                + "config-patch-standalone|diagnostics> --ksp <KSP folder> --dist <build output> [--cases N] [--out file]");
+                + "config-patch-standalone|diagnostics|early-chain|early-chain-off> --ksp <KSP folder> --dist <build output> [--cases N] [--out file] [--gamedata dir]");
             return 2;
         }
     }
@@ -103,7 +105,9 @@ namespace FastBoot.Tests
         public string Out;
 
         public string Managed { get { return Path.Combine(Ksp, Path.Combine("KSP_x64_Data", "Managed")); } }
-        public string GameData { get { return Path.Combine(Ksp, "GameData"); } }
+        /// --gamedata, else the install's own GameData.
+        public string GameData { get { return GameDataOverride ?? Path.Combine(Ksp, "GameData"); } }
+        public string GameDataOverride;
         public string FastBootHome { get { return Path.Combine(Dist, Path.Combine("GameData", "FastBoot")); } }
         public string FastBootPlugins { get { return Path.Combine(FastBootHome, "Plugins"); } }
 
@@ -127,6 +131,7 @@ namespace FastBoot.Tests
                     case "--dist": o.Dist = args[i + 1]; break;
                     case "--cases": o.Cases = int.Parse(args[i + 1]); break;
                     case "--out": o.Out = args[i + 1]; break;
+                    case "--gamedata": o.GameDataOverride = args[i + 1]; break;
                     default: return null;
                 }
             }
