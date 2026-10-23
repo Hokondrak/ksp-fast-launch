@@ -24,7 +24,15 @@ namespace FastBoot.Tests
             if (opts == null)
                 return Usage();
             // Tests may run while the machine is in use (games included); never compete for CPU.
-            System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+            try
+            {
+                System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
+            }
+            catch (Exception)
+            {
+                // Not supported under every runtime (e.g. some Mono builds); the tests still run.
+            }
+            Console.WriteLine("runtime: " + RuntimeName() + ", culture " + System.Globalization.CultureInfo.CurrentCulture.Name);
             SearchDirs.Add(opts.Managed);
             SearchDirs.Add(Path.Combine(opts.GameData, "000_Harmony"));
             SearchDirs.Add(Path.Combine(opts.GameData, Path.Combine("KSPCommunityFixes", "Plugins")));
@@ -69,10 +77,20 @@ namespace FastBoot.Tests
             return null;
         }
 
+        /// "Mono <version>" when running under Mono (monohost), else the .NET Framework version.
+        private static string RuntimeName()
+        {
+            Type mono = Type.GetType("Mono.Runtime");
+            if (mono == null)
+                return ".NET Framework " + Environment.Version;
+            MethodInfo name = mono.GetMethod("GetDisplayName", BindingFlags.NonPublic | BindingFlags.Static);
+            return "Mono " + (name == null ? "?" : name.Invoke(null, null));
+        }
+
         private static int Usage()
         {
             Console.WriteLine("usage: FastBoot.Tests.exe <diff|allowlist|config-patch-kspcf-first|config-patch-fastboot-first|"
-                + "config-patch-standalone|diagnostics> --ksp <KSP folder> --dist <build output> [--cases N]");
+                + "config-patch-standalone|diagnostics> --ksp <KSP folder> --dist <build output> [--cases N] [--out file]");
             return 2;
         }
     }
@@ -82,6 +100,7 @@ namespace FastBoot.Tests
         public string Ksp;
         public string Dist;
         public int Cases = 200000;
+        public string Out;
 
         public string Managed { get { return Path.Combine(Ksp, Path.Combine("KSP_x64_Data", "Managed")); } }
         public string GameData { get { return Path.Combine(Ksp, "GameData"); } }
@@ -107,6 +126,7 @@ namespace FastBoot.Tests
                     case "--ksp": o.Ksp = args[i + 1]; break;
                     case "--dist": o.Dist = args[i + 1]; break;
                     case "--cases": o.Cases = int.Parse(args[i + 1]); break;
+                    case "--out": o.Out = args[i + 1]; break;
                     default: return null;
                 }
             }

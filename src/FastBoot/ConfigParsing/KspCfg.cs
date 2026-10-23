@@ -9,7 +9,7 @@ namespace FastBoot.ConfigParsing
     /// token offsets; ToLines turns those into the List<string[]> that stock ConfigNode.RecurseFormat consumes.
     internal sealed class KspCfg
     {
-        public const uint RequiredVersion = 5;
+        public const uint RequiredVersion = 6;
         private const int StatusOk = 0;
 
         [StructLayout(LayoutKind.Sequential)]

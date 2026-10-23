@@ -12,6 +12,8 @@
 //! fast path; anything else, invalid UTF-8, or a UTF-16/32 byte-order mark is reported as `STATUS_FALLBACK` so
 //! the caller uses the stock parser for that file.
 
+mod fastpath_exclusions;
+
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -86,16 +88,34 @@ fn is_dotnet_whitespace(c: char) -> bool {
 }
 
 /// Non-ASCII characters allowed on the fast path. Stock finds `//`, `{` and `}` with culture-sensitive IndexOf,
-/// which ignores code points its collation tables do not know and treats repeat/sound marks specially. Unity's Mono
-/// ships older tables than desktop .NET, so only characters assigned by Unicode 3.0, from the scripts KSP configs
-/// use, and without mark-like characters, are listed. test/AllowlistTest.cs checks every one of them against stock
-/// in every position next to `/`, `{`, `}` and `=`. Anything else sends the file to the stock parser, which only
-/// costs speed.
+/// which ignores code points its collation tables do not know and treats repeat/sound marks specially. The ranges
+/// below are characters assigned by Unicode 3.0 in the scripts KSP configs use, without mark-like characters;
+/// `fastpath_exclusions` removes the ones KSP's Mono still treats specially (found by running the allowlist test
+/// inside KSP's own Mono with tools/monohost). Anything else sends the file to the stock parser, which only costs
+/// speed.
 fn fast_path_char(c: char) -> bool {
     if c.is_ascii() {
         return true;
     }
-    matches!(c as u32,
+    in_fast_path_ranges(c as u32) && !excluded(c as u32)
+}
+
+fn excluded(cp: u32) -> bool {
+    fastpath_exclusions::EXCLUDED
+        .binary_search_by(|&(lo, hi)| {
+            if hi < cp {
+                std::cmp::Ordering::Less
+            } else if lo > cp {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
+}
+
+fn in_fast_path_ranges(cp: u32) -> bool {
+    matches!(cp,
         0x00A0..=0x00AC | 0x00AE..=0x0220 | 0x0222..=0x0233 |   // Latin-1 (minus soft hyphen), Latin Extended-A/B
         0x0386 | 0x0388..=0x038A | 0x038C | 0x038E..=0x03A1 | 0x03A3..=0x03CE | // Greek letters
         0x0400..=0x0482 | 0x048C..=0x04C4 | 0x04C7..=0x04C8 | 0x04CB..=0x04CC | 0x04D0..=0x04F5 | 0x04F8..=0x04F9 | // Cyrillic
@@ -319,7 +339,7 @@ pub struct Batch {
 
 #[no_mangle]
 pub extern "C" fn kspcfg_version() -> u32 {
-    5
+    6
 }
 
 /// `path` is UTF-16 (what C# strings are), `len` in UTF-16 code units.
@@ -447,5 +467,14 @@ mod tests {
         assert_eq!(parse_bytes("a/\u{0378}/b".as_bytes()).status, STATUS_FALLBACK); // unassigned in Greek block
         assert_eq!(parse_bytes("\u{FF9E}{".as_bytes()).status, STATUS_FALLBACK); // halfwidth voiced sound mark
         assert_eq!(parse_bytes("\u{30FC}}".as_bytes()).status, STATUS_FALLBACK); // prolonged sound mark
+        assert_eq!(parse_bytes("a/\u{0400}/b".as_bytes()).status, STATUS_FALLBACK); // unknown to Mono's tables
+    }
+
+    #[test]
+    fn exclusion_table_is_sorted_and_disjoint() {
+        let t = fastpath_exclusions::EXCLUDED;
+        assert!(t.iter().all(|&(lo, hi)| lo <= hi));
+        assert!(t.windows(2).all(|w| w[0].1 < w[1].0));
+        assert!(excluded(0x0400) && excluded(0x0222) && !excluded(0x0401) && !excluded(0x0041));
     }
 }

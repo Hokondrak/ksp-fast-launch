@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -25,6 +26,7 @@ namespace FastBoot.Tests
             if (k == null)
                 return 1;
             int failures = 0;
+            var allBad = new SortedSet<int>();
             foreach (string culture in new[] { "ru-RU", "en-US", "" })
             {
                 Thread.CurrentThread.CurrentCulture = culture == "" ? CultureInfo.InvariantCulture : new CultureInfo(culture);
@@ -41,12 +43,21 @@ namespace FastBoot.Tests
                     string doc = string.Join("\n", Contexts.Select(t => t.Replace("C", c)).ToArray());
                     List<string[]> rust = k.FromBytes(Encoding.UTF8.GetBytes(doc));
                     if (rust != null && StockParser.DiffTokens(StockParser.PreFormat(doc.Split('\n')), rust) != null)
+                    {
                         bad.Add(string.Format("U+{0:X4}", cp));
+                        allBad.Add(cp);
+                    }
                 }
                 failures += bad.Count;
                 Console.WriteLine("culture {0}: {1} code points on the fast path, {2} disagree with stock{3}",
                     culture == "" ? "invariant" : culture, accepted, bad.Count,
                     bad.Count > 0 ? ": " + string.Join(" ", bad.Take(40).ToArray()) : "");
+            }
+            if (o.Out != null)
+            {
+                // One hex code point per line; tools/gen-fastpath-exclusions.py turns this into a Rust table.
+                File.WriteAllLines(o.Out, allBad.Select(cp => cp.ToString("X4")).ToArray());
+                Console.WriteLine("wrote {0} disagreeing code points to {1}", allBad.Count, o.Out);
             }
             return failures == 0 ? 0 : 1;
         }

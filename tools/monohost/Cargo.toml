@@ -1,0 +1,10 @@
+[package]
+name = "monohost"
+description = "Runs a .NET program inside KSP's own embedded Mono runtime, without starting the game (for tests)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "monohost"
+path = "src/main.rs"
