@@ -1,0 +1,10 @@
+[package]
+name = "ksplaunch"
+description = "Launches KSP with Boehm GC statistics enabled and records GC pauses, GPU memory and paging from outside the game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ksplaunch"
+path = "src/main.rs"

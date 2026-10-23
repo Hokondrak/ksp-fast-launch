@@ -1,0 +1,21 @@
+# Rust
+/target/
+
+# Build output (build.ps1)
+/dist/
+*.exe
+*.pdb
+*.tmp
+
+# Compiled C# next to sources or tests
+src/**/*.dll
+tests/**/*.dll
+
+# Local test output
+/tests/out/
+
+# Editors
+.vs/
+.vscode/
+.idea/
+*.user
