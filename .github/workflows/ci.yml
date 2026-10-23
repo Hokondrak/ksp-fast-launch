@@ -1,0 +1,20 @@
+# Rust only: the C# mod and its tests compile against KSP's own assemblies, which cannot be redistributed, so
+# they run locally through build.ps1 / test.ps1.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --workspace
+      - run: cargo test --release --workspace
