@@ -6,7 +6,7 @@ members = ["native/kspcfg", "tools/ksplaunch", "tools/monohost"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/OWNER/ksp-fastboot"
+repository = "https://github.com/Hokondrak/ksp-fast-launch"
 
 [profile.release]
 opt-level = 3
