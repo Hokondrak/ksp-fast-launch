@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "fastboot-aotlink"
+version = "0.1.0"
+
+[[package]]
 name = "fastboot-early"
 version = "0.1.0"
 dependencies = [

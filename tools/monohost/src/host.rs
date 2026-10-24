@@ -9,6 +9,8 @@ type InitFn = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_void;
 type OpenFn = unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_void;
 type ExecFn = unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, *mut *mut c_char) -> c_int;
 type ExitCodeFn = unsafe extern "C" fn() -> c_int;
+type MainFn = unsafe extern "C" fn(c_int, *mut *mut c_char) -> c_int;
+type ParseOptionsFn = unsafe extern "C" fn(c_int, *mut *mut c_char);
 
 #[link(name = "kernel32")]
 extern "system" {
@@ -42,6 +44,10 @@ impl Mono {
 struct Args {
     ksp: PathBuf,
     preload: Vec<PathBuf>,
+    /// Run Mono's AOT compiler on the program instead of the program: `--aot=asmonly,outfile=<this>`.
+    aot_asm: Option<PathBuf>,
+    /// Extra folders Mono searches for AOT images (`--aot-path`).
+    aot_paths: Vec<PathBuf>,
     program: PathBuf,
     rest: Vec<String>,
 }
@@ -49,20 +55,24 @@ struct Args {
 fn parse_args() -> Result<Args, String> {
     let mut ksp = None;
     let mut preload = Vec::new();
+    let mut aot_asm = None;
+    let mut aot_paths = Vec::new();
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         match a.as_str() {
             "--ksp" => ksp = it.next().map(PathBuf::from),
             "--preload" => preload.push(it.next().map(PathBuf::from).ok_or("missing DLL after --preload")?),
+            "--aot-asm" => aot_asm = Some(it.next().map(PathBuf::from).ok_or("missing file after --aot-asm")?),
+            "--aot-path" => aot_paths.push(it.next().map(PathBuf::from).ok_or("missing folder after --aot-path")?),
             "--" => {
                 let program = it.next().ok_or("missing program after --")?;
                 let ksp = ksp.ok_or("missing --ksp <KSP folder>")?;
-                return Ok(Args { ksp, preload, program: PathBuf::from(program), rest: it.collect() });
+                return Ok(Args { ksp, preload, aot_asm, aot_paths, program: PathBuf::from(program), rest: it.collect() });
             }
             _ => return Err(format!("unexpected argument {}", a)),
         }
     }
-    Err("usage: monohost --ksp <KSP folder> [--preload <dll>]... -- <program.exe> [args...]".into())
+    Err("usage: monohost --ksp <KSP folder> [--preload <dll>]... [--aot-path <dir>]... [--aot-asm <out.s>] -- <program.exe> [args...]".into())
 }
 
 pub fn main() -> i32 {
@@ -117,13 +127,26 @@ unsafe fn run(args: &Args) -> Result<i32, String> {
     set_dirs(managed_c.as_ptr(), etc_c.as_ptr());
     set_assemblies_path(managed_c.as_ptr());
     config_parse(std::ptr::null());
+    let program = std::fs::canonicalize(&args.program).map_err(|e| format!("{}: {}", args.program.display(), e))?;
+    let program_s = program.display().to_string();
+    let program_s = program_s.strip_prefix(r"\\?\").unwrap_or(&program_s).to_string();
+    if let Some(out) = &args.aot_asm {
+        // The AOT compiler is part of the runtime and is reached through mono_main, which initialises Mono itself.
+        let main: MainFn = mono.get("mono_main")?;
+        let mut owned = [cstr("monohost"), cstr(&format!("--aot=asmonly,outfile={}", out.display())), cstr(&program_s)];
+        let mut argv: Vec<*mut c_char> = owned.iter_mut().map(|s| s.as_ptr() as *mut c_char).collect();
+        return Ok(main(argv.len() as c_int, argv.as_mut_ptr()));
+    }
+    if !args.aot_paths.is_empty() {
+        let parse_options: ParseOptionsFn = mono.get("mono_jit_parse_options")?;
+        let mut owned: Vec<CString> = args.aot_paths.iter().map(|p| cstr(&format!("--aot-path={}", p.display()))).collect();
+        let mut argv: Vec<*mut c_char> = owned.iter_mut().map(|s| s.as_ptr() as *mut c_char).collect();
+        parse_options(argv.len() as c_int, argv.as_mut_ptr());
+    }
     let domain = jit_init(cstr("monohost").as_ptr(), cstr("v4.0.30319").as_ptr());
     if domain.is_null() {
         return Err("mono_jit_init_version failed".into());
     }
-    let program = std::fs::canonicalize(&args.program).map_err(|e| format!("{}: {}", args.program.display(), e))?;
-    let program_s = program.display().to_string();
-    let program_s = program_s.strip_prefix(r"\\?\").unwrap_or(&program_s).to_string();
     let assembly = open(domain, cstr(&program_s).as_ptr());
     if assembly.is_null() {
         return Err(format!("Mono could not open {}", program_s));

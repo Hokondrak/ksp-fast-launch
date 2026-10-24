@@ -1,0 +1,13 @@
+[package]
+name = "fastboot-aotlink"
+description = "Turns the assembly text Mono's AOT compiler writes (--aot=asmonly) into a loadable Windows DLL, without an external assembler or linker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "aotlink"
+path = "src/main.rs"
