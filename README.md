@@ -17,6 +17,8 @@ Reference install: KSP 1.12.5, Jool Odyssey modpack (1,489 parts, 4,126 cfg file
 | Cold (first launch after a reboot) | 139 s | **65 s** |
 | Warm (files already cached) | 61–62 s | not yet measured |
 
+Part compilation, with the profiler on (which slows it), went from 16.7 s to 13.1 s with fast sound lookups.
+
 The cold launch is now about as fast as a warm one. With FastBoot, the warm-up read 12.6 GB on 8 threads in
 13.8 s, and the config parser served 8,032 loads across both config passes in 2.0 s of main-thread time. The
 game compiled the same 1,489 parts and 586 internal spaces as without it. One run each, so read the numbers as
@@ -27,6 +29,7 @@ indicative.
 | Part | What | Where |
 | --- | --- | --- |
 | Config parser | Serves `ConfigNode.Load` for GameData `.cfg` files from a native Rust parser (`kspcfg`), pre-parsing every file on worker threads. Tree building stays KSP's own, so the result is identical to stock; files outside the parser's verified fast path go to stock (or KSPCommunityFixes) unchanged. | `GameData/FastBoot` |
+| Fast sound lookups | KSP finds a sound by name by checking every loaded sound in turn, asking the engine for each one's name. FastBoot answers from an index with the same result (fuzz-tested against stock). It matters when mods look up many sounds while parts load: on the reference install that was 30% of part compilation. | `GameData/FastBoot` |
 | Cold-start warm-up | On a launch after a reboot, KSP mostly waits for the disk: 139 s against 61 s warm on the reference install, because KSP and Unity read files one at a time. FastBoot reads the same files ahead of the game on 8 threads (1 on a spinning disk), in the order the game will want them, so the game's reads come from memory. With the early-start loader it starts at process start and records which files the boot opens, so the next launch warms exactly those. It reads at most half the free memory and writes nothing but its read list. | `GameData/FastBoot`, best with `EarlyStart/version.dll` |
 | Early start (optional) | A `version.dll` placed next to `KSP_x64.exe` that starts the config parser *before* KSP's first config scan, which runs before any GameData plugin exists. Without it, only the second scan benefits. | `EarlyStart/version.dll` |
 | Diagnostics (off by default) | A boot timing report per launch, and optionally a stall sampler that records what the main thread is doing during freezes. | `GameData/FastBoot/PluginData/Diagnostics` |
@@ -76,6 +79,8 @@ Settings are in `GameData/FastBoot/FastBoot.cfg`:
 | `ConfigParser` | `true` | Use the native config parser. |
 | `ConfigParserThreads` | `0` | Pre-parse threads; 0 = CPU threads − 2, at most 8. |
 | `Warmup` | `true` | Cold-start warm-up. |
+| `FastLookups` | `true` | Index for sound lookups by name. |
+| `Profile` | (empty) | `parts`: sample part compilation every 2 ms and write a report to `PluginData/Diagnostics` (Windows). |
 | `Diagnostics` | `false` | Write a boot timing report per launch. |
 | `StallSampler` | `false` | With Diagnostics: sample the main thread during freezes (Windows). |
 
@@ -85,8 +90,10 @@ Open, and waiting on measurements or analysis:
 
 - **Part compilation**, which grows with the number of parts (about 7 ms each; 10.5 s for the reference
   install's 1,489 parts): not yet analysed.
-- **Launches after a mod change**: ModuleManager re-patches everything (about 10 s of waiting here), and part
-  compilation took twice as long (20 s) in both such runs. The cause of the second is not yet known.
+- **Launches after a mod change**: ModuleManager re-patches everything (14.5 s of waiting here) and deletes
+  KSP's drag cube cache (`PartDatabase.cfg`), so every part's drag cubes are rendered again (+9.4 s; most of it
+  waiting for GPU readback). Planned: a drag cube cache keyed by each part's config, models and module code, so
+  only changed parts are re-rendered, first in a check-only mode.
 - **Warm-launch gain** with FastBoot, and repeated runs of every number above.
 
 Measured and ruled out: a larger initial GC heap (`GC_INITIAL_HEAP_SIZE=4G`) made no difference (61 s against
