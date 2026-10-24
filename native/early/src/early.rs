@@ -1,6 +1,6 @@
 //! The hook chain: player's `GetProcAddress` -> `mono_jit_init_version` -> `FastBoot.Early.Bootstrap.Start`.
 
-use crate::{boot_reads, counters, iat, log, win};
+use crate::{boot_reads, counters, iat, jitprofile, log, win};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -122,8 +122,13 @@ unsafe extern "system" fn get_proc_address(module: win::Hmodule, name: *const c_
 unsafe extern "C" fn jit_init_version(name: *const c_char, version: *const c_char) -> *mut c_void {
     let real: JitInitFn = std::mem::transmute(REAL_JIT_INIT.load(Ordering::Acquire));
     // Mono registers its counters while it initialises and skips sections not enabled by then.
-    if CONFIG.get().is_some_and(|c| c.mono_counters) && counters::enable(mono_module(), real_get_proc_address()) {
-        log::line("Mono counters enabled");
+    if CONFIG.get().is_some_and(|c| c.mono_counters) {
+        if counters::enable(mono_module(), real_get_proc_address()) {
+            log::line("Mono counters enabled");
+        }
+        if jitprofile::install(mono_module(), real_get_proc_address()) {
+            log::line("JIT profiler callbacks installed");
+        }
     }
     let domain = real(name, version);
     unhook();

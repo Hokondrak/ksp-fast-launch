@@ -31,6 +31,8 @@ mod early;
 #[cfg(windows)]
 mod iat;
 #[cfg(windows)]
+mod jitprofile;
+#[cfg(windows)]
 mod log;
 #[cfg(windows)]
 mod proxy;

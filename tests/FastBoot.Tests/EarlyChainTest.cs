@@ -118,6 +118,8 @@ namespace FastBoot.Tests
             // test.ps1 sets FASTBOOT_MONO_COUNTERS=1 for this run.
             if (!after.Contains("mono counter: jit |"))
                 failures.Add("early.log has no Mono JIT counters");
+            if (!after.Contains("JIT by assembly:") || !after.Contains(" methods  FastBoot.Tests"))
+                failures.Add("early.log has no per-assembly JIT breakdown including this test runner");
             return Report(failures, string.Format("{0} files x 2 passes equal to stock; KSPCF parsed only the {1} declined loads; read list saved",
                 files.Length, declined));
         }
