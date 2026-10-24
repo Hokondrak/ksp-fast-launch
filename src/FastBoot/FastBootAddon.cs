@@ -93,6 +93,7 @@ namespace FastBoot
         private void StartProfiler(string home, string name)
         {
             PartDatabaseWatch.Enabled = true;
+            PqsCacheWatch.Install();
             PhaseProfiler.Window window = PhaseProfiler.Find(name);
             if (window == null || NativeLibrary.Current != NativeLibrary.Platform.Windows)
             {
