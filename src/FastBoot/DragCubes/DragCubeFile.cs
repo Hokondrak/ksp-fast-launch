@@ -16,6 +16,9 @@ namespace FastBoot.DragCubes
         /// Part url -> its cube lines ("cube = ..." / "procedural = True"), in file order.
         public readonly Dictionary<string, List<string>> Parts = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
+        /// Part urls in file order.
+        public readonly List<string> Order = new List<string>();
+
         public static DragCubeFile Parse(string text)
         {
             var file = new DragCubeFile();
@@ -36,6 +39,8 @@ namespace FastBoot.DragCubes
                         break;
                     case "url":
                         current = new List<string>();
+                        if (!file.Parts.ContainsKey(value))
+                            file.Order.Add(value);
                         file.Parts[value] = current;
                         break;
                     case "cube":
@@ -46,6 +51,23 @@ namespace FastBoot.DragCubes
                 }
             }
             return file;
+        }
+
+        /// PartDatabase.cfg text exactly as KSP writes it (ConfigNode.Save: tabs, CRLF, no byte order mark).
+        public static string Write(string version, IEnumerable<KeyValuePair<string, List<string>>> parts)
+        {
+            var sb = new System.Text.StringBuilder();
+            const string nl = "\r\n";
+            sb.Append("PART_DATABASE").Append(nl).Append('{').Append(nl).Append("\tversion = ").Append(version).Append(nl).Append('}').Append(nl);
+            foreach (KeyValuePair<string, List<string>> part in parts)
+            {
+                sb.Append("PART").Append(nl).Append('{').Append(nl).Append("\turl = ").Append(part.Key).Append(nl);
+                sb.Append("\tDRAG_CUBE").Append(nl).Append("\t{").Append(nl);
+                foreach (string cube in part.Value)
+                    sb.Append("\t\t").Append(cube).Append(nl);
+                sb.Append("\t}").Append(nl).Append('}').Append(nl);
+            }
+            return sb.ToString();
         }
 
         /// How two sets of cubes for one part relate.

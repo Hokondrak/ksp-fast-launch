@@ -33,8 +33,8 @@ namespace FastBoot
             if (settings.Profile.Length > 0)
                 StartProfiler(home, settings.Profile);
             PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "when FastBoot's addon started");
-            DragCubes.DragCubeCheck.Configure(settings.DragCubeCache, KSPUtil.ApplicationRootPath, home);
-            DragCubes.DragCubeCheck.Snapshot();
+            DragCubes.DragCubeReuse.Configure(settings.DragCubeCache, KSPUtil.ApplicationRootPath, home);
+            DragCubes.DragCubeReuse.Snapshot();
             if (settings.FastLookups)
                 Lookups.AudioLookupPatch.Install();
             if (settings.ConfigParser)
@@ -60,8 +60,8 @@ namespace FastBoot
             PartDatabaseWatch.Enabled = settings.Profile.Length > 0;
             PartDatabaseWatch.Note(kspRoot, "at early start");
             // Before ModuleManager runs: it deletes PartDatabase.cfg after a mod change.
-            DragCubes.DragCubeCheck.Configure(settings.DragCubeCache, kspRoot, home);
-            DragCubes.DragCubeCheck.Snapshot();
+            DragCubes.DragCubeReuse.Configure(settings.DragCubeCache, kspRoot, home);
+            DragCubes.DragCubeReuse.Snapshot();
             if (!settings.ConfigParser)
                 return;
             // KspFastCfg's assembly is not loaded yet, so look for it on disk; Awake reports the skip.
@@ -87,7 +87,7 @@ namespace FastBoot
         public static void ModuleManagerPostLoad()
         {
             PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "after ModuleManager's patching");
-            DragCubes.DragCubeCheck.AfterPatching();
+            DragCubes.DragCubeReuse.AfterPatching();
         }
 
         private void StartProfiler(string home, string name)

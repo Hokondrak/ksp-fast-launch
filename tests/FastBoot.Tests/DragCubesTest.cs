@@ -21,6 +21,7 @@ namespace FastBoot.Tests
                 Console.WriteLine("no PartDatabase.cfg in the install; real-file checks skipped");
             failures += Comparisons();
             failures += CacheRoundTrip();
+            failures += States();
             failures += ModelFolders(o);
             return failures == 0 ? 0 : 1;
         }
@@ -45,6 +46,16 @@ namespace FastBoot.Tests
             double d;
             if (f.Parts.Values.Any(c => DragCubeFile.Compare(c, c.ToList(), out d) != DragCubeFile.Match.Identical))
                 failures += Fail("a part's cubes are not identical to themselves");
+            // What restore mode writes must be what KSP itself writes, byte for byte.
+            string written = DragCubeFile.Write(f.Version, f.Order.Select(u => new KeyValuePair<string, List<string>>(u, f.Parts[u])));
+            string original = File.ReadAllText(path);
+            if (written != original)
+            {
+                int at = Enumerable.Range(0, Math.Min(written.Length, original.Length)).FirstOrDefault(i => written[i] != original[i]);
+                failures += Fail("rewritten PartDatabase.cfg differs from KSP's at character " + at + " of " + original.Length);
+            }
+            else
+                Console.WriteLine("PartDatabase.cfg rewritten from its parsed parts: byte for byte identical ({0} characters)", original.Length);
             return failures;
         }
 
@@ -80,15 +91,69 @@ namespace FastBoot.Tests
         {
             string path = Path.Combine(Path.GetTempPath(), "fastboot-dragcubes-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".txt");
             var cache = new DragCubeCache { Version = "1.12.5.3190 (WindowsPlayer x64)" };
-            cache.Parts["Mod/Parts/a/a"] = new DragCubeCache.Entry { Fingerprint = "ab12", Cubes = { "cube = Default, 1,2,3", "procedural = True" } };
-            cache.Parts["Mod/Parts/b/b"] = new DragCubeCache.Entry { Fingerprint = "cd34" };
+            cache.Parts["Mod/Parts/a/a"] = new DragCubeCache.Entry { Fingerprint = "ab12", State = DragCubeCache.State.Stable, Cubes = { "cube = Default, 1,2,3", "procedural = True" } };
+            cache.Parts["Mod/Parts/b/b"] = new DragCubeCache.Entry { Fingerprint = "cd34", State = DragCubeCache.State.Unstable };
             cache.Save(path);
             DragCubeCache back = DragCubeCache.Load(path);
-            File.Delete(path);
             bool ok = back.Version == cache.Version && back.Parts.Count == 2 && back.Parts["Mod/Parts/a/a"].Fingerprint == "ab12"
+                && back.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Stable && back.Parts["Mod/Parts/b/b"].State == DragCubeCache.State.Unstable
                 && back.Parts["Mod/Parts/a/a"].Cubes.SequenceEqual(cache.Parts["Mod/Parts/a/a"].Cubes) && back.Parts["Mod/Parts/b/b"].Cubes.Count == 0;
-            Console.WriteLine("drag cube cache file: " + (ok ? "round trip exact" : "ROUND TRIP BROKEN"));
+            // A version 1 cache (no states) loads with every part unverified.
+            File.WriteAllLines(path, new[] { "# FastBoot drag cube cache v1", "V\tv", "P\tMod/Parts/a/a\tab12", "C\tcube = Default, 1,2,3" });
+            DragCubeCache v1 = DragCubeCache.Load(path);
+            File.Delete(path);
+            ok = ok && v1.Parts.Count == 1 && v1.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Unverified && v1.Parts["Mod/Parts/a/a"].Cubes.Count == 1;
+            Console.WriteLine("drag cube cache file: " + (ok ? "round trip exact, version 1 files load as unverified" : "ROUND TRIP BROKEN"));
             return ok ? 0 : 1;
+        }
+
+        /// The rules that decide what restore mode may reuse.
+        private static int States()
+        {
+            const string cube = "cube = Default, 1.25,0.5,0.75, 1,1,1, 0,0,0, 1,1,1";
+            Func<DragCubeCache.State, DragCubeCache.Entry> prev = s => new DragCubeCache.Entry { Fingerprint = "f", State = s, Cubes = { cube } };
+            var same = new List<string> { cube };
+            var rounding = new List<string> { cube.Replace("1.25", "1.251") };
+            var other = new List<string> { cube.Replace("0.5,", "0.9,") };
+            var S = DragCubeCache.State.Stable;
+            var U = DragCubeCache.State.Unstable;
+            var V = DragCubeCache.State.Unverified;
+            var cases = new[]
+            {
+                Tuple.Create("new part", (DragCubeCache.Entry)null, "f", same, true, V),
+                Tuple.Create("inputs changed", prev(S), "g", same, true, V),
+                Tuple.Create("rendered the same again", prev(V), "f", same, true, S),
+                Tuple.Create("rendered within rounding", prev(V), "f", rounding, true, S),
+                Tuple.Create("rendered differently", prev(V), "f", other, true, U),
+                Tuple.Create("stable, rendered differently", prev(S), "f", other, true, U),
+                Tuple.Create("unstable stays unstable", prev(U), "f", same, true, U),
+                Tuple.Create("unstable, loaded", prev(U), "f", other, false, U),
+                Tuple.Create("stable, restored or loaded", prev(S), "f", same, false, S),
+                Tuple.Create("stable, file edited without a render", prev(S), "f", other, false, V),
+                Tuple.Create("unverified, loaded", prev(V), "f", same, false, V),
+            };
+            int failures = 0;
+            foreach (var c in cases)
+            {
+                DragCubeCache.State got = DragCubeCache.Next(c.Item2, c.Item3, c.Item4, c.Item5);
+                if (got != c.Item6)
+                    failures += Fail("state '" + c.Item1 + "': " + got + ", expected " + c.Item6);
+            }
+            int transitionFailures = failures;
+
+            var cache = new DragCubeCache();
+            cache.Parts["stable"] = prev(S);
+            cache.Parts["unstable"] = prev(U);
+            cache.Parts["unverified"] = prev(V);
+            cache.Parts["changed"] = prev(S);
+            cache.Parts["empty"] = new DragCubeCache.Entry { Fingerprint = "f", State = S };
+            var fps = new Dictionary<string, string> { { "stable", "f" }, { "unstable", "f" }, { "unverified", "f" }, { "changed", "g" }, { "empty", "f" }, { "uncached", "f" } };
+            Dictionary<string, List<string>> reusable = cache.Reusable(fps);
+            if (reusable.Count != 1 || !reusable.ContainsKey("stable"))
+                failures += Fail("reusable parts: " + string.Join(", ", reusable.Keys.ToArray()) + ", expected only 'stable'");
+            Console.WriteLine("restore rules: {0} of {1} state transitions right; reusable: {2}", cases.Length - transitionFailures, cases.Length,
+                string.Join(", ", reusable.Keys.ToArray()));
+            return failures;
         }
 
         /// Every PART in the install's cfg files must yield at least one existing model folder, and fingerprints

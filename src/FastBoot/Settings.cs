@@ -29,8 +29,8 @@ namespace FastBoot
         /// Serve GameDatabase's by-name audio lookups from an index instead of a scan of every clip.
         public bool FastLookups = true;
 
-        /// Drag cube cache: "off", or "check" to measure, without changing anything, whether reusing cubes after a
-        /// mod change would have been correct.
+        /// Drag cube cache: "off"; "check" to only measure whether reusing cubes after a mod change would be correct;
+        /// "restore" to reuse the cubes of unchanged, verified parts (DragCubes.DragCubeReuse).
         public string DragCubeCache = "off";
 
         /// Name of a boot stretch to profile continuously (Diagnostics.PhaseProfiler.Windows), or empty for none.
