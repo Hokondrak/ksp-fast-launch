@@ -4,7 +4,7 @@
 //   FastBoot.Tests.exe <command> --ksp <KSP folder> --dist <build output folder> [--cases N]
 //
 // Commands: diff, allowlist, config-patch-kspcf-first, config-patch-fastboot-first, config-patch-standalone,
-//           diagnostics, lookups, dragcubes, early-chain, early-chain-off, early-chain-foreign (these three only under monohost
+//           diagnostics, lookups, dragcubes, terrain, early-chain, early-chain-off, early-chain-foreign (these three only under monohost
 //           --preload version.dll)
 using System;
 using System.Collections.Generic;
@@ -67,6 +67,7 @@ namespace FastBoot.Tests
                 case "early-chain-foreign": return EarlyChainTest.Run(opts, EarlyChainTest.Mode.Foreign);
                 case "lookups": return LookupsTest.Run(opts);
                 case "dragcubes": return DragCubesTest.Run(opts);
+                case "terrain": return TerrainTest.Run(opts);
                 case "il": return IlDump.Run(opts); // developer tool: --out Type.Method
                 case "refs": return IlRefs.Run(opts); // developer tool: --out Type.Member
                 default: return Usage();
@@ -98,7 +99,7 @@ namespace FastBoot.Tests
         private static int Usage()
         {
             Console.WriteLine("usage: FastBoot.Tests.exe <diff|allowlist|config-patch-kspcf-first|config-patch-fastboot-first|"
-                + "config-patch-standalone|diagnostics|lookups|dragcubes|early-chain|early-chain-off|early-chain-foreign> --ksp <KSP folder> --dist <build output> [--cases N] [--out file] [--gamedata dir]");
+                + "config-patch-standalone|diagnostics|lookups|dragcubes|terrain|early-chain|early-chain-off|early-chain-foreign> --ksp <KSP folder> --dist <build output> [--cases N] [--out file] [--gamedata dir]");
             return 2;
         }
     }

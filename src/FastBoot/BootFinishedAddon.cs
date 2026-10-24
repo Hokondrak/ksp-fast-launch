@@ -18,6 +18,7 @@ namespace FastBoot
             // Kept alive only for OnApplicationQuit; it does nothing per frame.
             DontDestroyOnLoad(gameObject);
             ColdStart.Warmup.BootFinished();
+            Terrain.PqsCacheDeferral.StartPrewarm(this);
             if (Lookups.AudioLookupPatch.Installed)
                 Log.Info("fast audio lookup: " + Lookups.AudioLookupPatch.Calls + " lookups, index built "
                     + Lookups.AudioLookupPatch.Rebuilds + " times");

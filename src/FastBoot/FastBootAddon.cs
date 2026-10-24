@@ -37,6 +37,8 @@ namespace FastBoot
             DragCubes.DragCubeReuse.Snapshot();
             if (settings.FastLookups)
                 Lookups.AudioLookupPatch.Install();
+            if (settings.DeferTerrainCache)
+                Terrain.PqsCacheDeferral.Install();
             if (settings.ConfigParser)
             {
                 if (ConfigLoadPatch.Installed)

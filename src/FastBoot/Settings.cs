@@ -29,6 +29,9 @@ namespace FastBoot
         /// Serve GameDatabase's by-name audio lookups from an index instead of a scan of every clip.
         public bool FastLookups = true;
 
+        /// Build KSP's pool of terrain quads after the loading screen instead of during it (Terrain.PqsCacheDeferral).
+        public bool DeferTerrainCache = true;
+
         /// Drag cube cache: "off"; "check" to only measure whether reusing cubes after a mod change would be correct;
         /// "restore" to reuse the cubes of unchanged, verified parts (DragCubes.DragCubeReuse).
         public string DragCubeCache = "off";
@@ -56,6 +59,7 @@ namespace FastBoot
                     case "Warmup": s.Warmup = Bool(kv, s.Warmup); break;
                     case "FastLookups": s.FastLookups = Bool(kv, s.FastLookups); break;
                     case "DragCubeCache": s.DragCubeCache = kv.Value; break;
+                    case "DeferTerrainCache": s.DeferTerrainCache = Bool(kv, s.DeferTerrainCache); break;
                     case "MonoCounters": s.MonoCounters = Bool(kv, s.MonoCounters); break;
                     case "Profile": s.Profile = kv.Value; break;
                     default: Log.Warning("unknown setting '" + kv.Key + "' in " + path); break;
@@ -73,8 +77,8 @@ namespace FastBoot
 
         public override string ToString()
         {
-            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, FastLookups={3}, Diagnostics={4}, StallSampler={5}",
-                ConfigParser, EffectiveThreads(), Warmup, FastLookups, Diagnostics, StallSampler)
+            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, FastLookups={3}, DeferTerrainCache={4}, Diagnostics={5}, StallSampler={6}",
+                ConfigParser, EffectiveThreads(), Warmup, FastLookups, DeferTerrainCache, Diagnostics, StallSampler)
                 + (DragCubeCache != "off" ? ", DragCubeCache=" + DragCubeCache : "")
                 + (Profile.Length > 0 ? ", Profile=" + Profile : "");
         }
