@@ -27,13 +27,19 @@ pub struct Fixup {
     pub line: usize,
 }
 
+pub struct Assignment {
+    pub expr: Expr,
+    pub section: usize,
+    pub offset: usize,
+}
+
 #[derive(Default)]
 pub struct Module {
     pub sections: Vec<Section>,
     /// Label -> (section, offset).
     pub symbols: HashMap<String, (usize, usize)>,
-    /// `name = expression`.
-    pub assignments: HashMap<String, Expr>,
+    /// `name = expression`, with where it was defined: `.` in the expression means that location, as in GAS.
+    pub assignments: HashMap<String, Assignment>,
     pub globals: Vec<String>,
     pub fixups: Vec<Fixup>,
 }
@@ -124,7 +130,10 @@ impl Assembler {
         if let Some(eq) = assignment(s) {
             let name = s[..eq].trim().to_string();
             let value = expr::parse(&s[eq + 1..])?;
-            self.m.assignments.insert(name, value);
+            let def = Assignment { expr: value, section: self.current, offset: self.here() };
+            if self.m.symbols.contains_key(&name) || self.m.assignments.insert(name.clone(), def).is_some() {
+                return Err(format!("{} defined twice", name));
+            }
             return Ok(());
         }
         let (word, rest) = match s.find(char::is_whitespace) {
@@ -141,18 +150,38 @@ impl Assembler {
             }
             ".text" | ".data" | ".bss" => self.current = self.m.section(word),
             ".balign" | ".p2align" => {
+                // .balign alignment[, fill[, max_skip]]: no padding at all if more than max_skip bytes are needed.
                 let ops = expr::split_operands(rest);
-                let n = const_value(ops.first().copied().unwrap_or(""))?;
-                let align = if word == ".p2align" { 1usize << n } else { n as usize };
-                if align == 0 || !align.is_power_of_two() || align > 4096 {
+                if ops.is_empty() || ops.len() > 3 {
+                    return Err(format!("{} takes one to three operands", word));
+                }
+                let n = const_value(ops[0])?;
+                let align = if word == ".p2align" {
+                    if !(0..=12).contains(&n) {
+                        return Err(format!("unsupported alignment exponent {}", n));
+                    }
+                    1i64 << n
+                } else {
+                    n
+                };
+                if align <= 0 || (align as u64).count_ones() != 1 || align > 4096 {
                     return Err(format!("unsupported alignment {}", align));
                 }
                 let fill = match ops.get(1) {
-                    Some(f) if !f.is_empty() => const_value(f)? as u8,
+                    Some(f) if !f.is_empty() => const_value(f)?,
                     _ => 0,
                 };
-                while self.here() % align != 0 {
-                    self.emit(&[fill]);
+                check_fits(fill, 1)?;
+                let pad = (align as usize - self.here() % align as usize) % align as usize;
+                let max_skip = match ops.get(2) {
+                    Some(m) if !m.is_empty() => const_value(m)?,
+                    _ => i64::MAX,
+                };
+                if max_skip < 0 {
+                    return Err(format!("negative maximum skip {}", max_skip));
+                }
+                if pad as i64 <= max_skip {
+                    self.emit(&vec![fill as u8; pad]);
                 }
             }
             ".byte" => self.data(rest, 1)?,
@@ -363,12 +392,23 @@ x=g - f
         assert_eq!(m.fixups.len(), 2);
         assert_eq!(m.fixups[0].kind, FixupKind::PcRel32);
         assert!(m.assignments.contains_key("x"));
+        assert_eq!(m.assignments["x"].offset, 9, "an assignment records where it was defined");
         assert!(m.sections[2].discarded);
     }
 
     #[test]
+    fn aligns_like_gas() {
+        let pad = |src: &str| assemble(src).unwrap().sections[0].data.clone();
+        assert_eq!(pad(".byte 1\n.balign 16,0,4\n.byte 2"), vec![1, 2], "more padding than max_skip: none");
+        assert_eq!(pad(".byte 1\n.balign 4,0x90,4\n.byte 2"), vec![1, 0x90, 0x90, 0x90, 2]);
+        assert_eq!(pad(".byte 1\n.p2align 2\n.byte 2"), vec![1, 0, 0, 0, 2]);
+        assert_eq!(pad(".balign 8\n.byte 3"), vec![3], "already aligned");
+    }
+
+    #[test]
     fn rejects_anything_unexpected() {
-        for bad in ["mov %rax, %rbx", "call *%rax", "jmp label", ".comm x,8", "\t.secrel32 f", "\t.byte 300", "a: \na:"] {
+        for bad in ["mov %rax, %rbx", "call *%rax", "jmp label", ".comm x,8", "\t.secrel32 f", "\t.byte 300", "a: \na:",
+            ".p2align 64", ".p2align 13", ".balign 3", ".balign 8192", ".balign 8,0,4,1", ".balign 8,300", "x = 1\nx = 2"] {
             assert!(assemble(bad).is_err(), "accepted: {}", bad);
         }
     }

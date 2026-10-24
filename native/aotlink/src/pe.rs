@@ -85,7 +85,13 @@ impl Resolver<'_> {
                         v.abs += coef;
                         v.rva += coef * rva;
                     } else if let Some(a) = self.m.assignments.get(name) {
-                        let inner = self.value(a, here, depth + 1)?;
+                        // `.` inside an assignment is where the assignment was written, not where it is used.
+                        let defined_at = match self.section_rva.get(&a.section) {
+                            Some(&rva) => rva as i64 + a.offset as i64,
+                            None if a.expr.terms.iter().all(|(_, t)| *t != Term::Here) => 0,
+                            None => return Err(format!("{} uses '.' in a section that is not written", name)),
+                        };
+                        let inner = self.value(&a.expr, defined_at, depth + 1)?;
                         v.abs += coef * inner.abs;
                         v.rva += coef * inner.rva;
                     } else {
@@ -158,13 +164,29 @@ pub fn write(m: &Module, dll_name: &str) -> Result<Vec<u8>, String> {
         }
     }
 
-    // .pdata must be sorted for the exception directory.
+    // .pdata becomes the exception directory: whole RUNTIME_FUNCTION records (begin, end, unwind info RVAs), in
+    // address order, each covering code inside .text and pointing at unwind data inside the image.
     let pdata = kept.iter().position(|&k| m.sections[k].name == ".pdata");
     if let Some(p) = pdata {
         let d = &outs[p].data;
-        let starts: Vec<u32> = d.chunks(12).filter(|c| c.len() == 12).map(|c| u32::from_le_bytes(c[..4].try_into().unwrap())).collect();
-        if starts.windows(2).any(|w| w[0] > w[1]) {
-            return Err(".pdata entries are not in address order".into());
+        if d.len() % 12 != 0 {
+            return Err(format!(".pdata is {} bytes, not a whole number of 12-byte records", d.len()));
+        }
+        let text = outs.iter().find(|o| o.characteristics == CODE).map(|o| (o.rva, o.rva + o.data.len() as u32)).unwrap_or((0, 0));
+        let mut previous_end = 0u32;
+        for (i, r) in d.chunks(12).enumerate() {
+            let word = |k: usize| u32::from_le_bytes(r[4 * k..4 * k + 4].try_into().unwrap());
+            let (begin, end, unwind) = (word(0), word(1), word(2));
+            if begin >= end || begin < text.0 || end > text.1 {
+                return Err(format!(".pdata record {} covers {:#x}..{:#x}, outside .text", i, begin, end));
+            }
+            if begin < previous_end {
+                return Err(format!(".pdata record {} overlaps or is out of address order", i));
+            }
+            if unwind == 0 || unwind >= rva {
+                return Err(format!(".pdata record {} points at unwind data outside the image", i));
+            }
+            previous_end = end;
         }
     }
 
@@ -321,4 +343,66 @@ pub fn write(m: &Module, dll_name: &str) -> Result<Vec<u8>, String> {
         f.extend_from_slice(&d);
     }
     Ok(f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asm::assemble;
+
+    fn data_section(dll: &[u8]) -> Vec<u8> {
+        let pe = u32::from_le_bytes(dll[0x3C..0x40].try_into().unwrap()) as usize;
+        let count = u16::from_le_bytes(dll[pe + 6..pe + 8].try_into().unwrap()) as usize;
+        let start = pe + 24 + u16::from_le_bytes(dll[pe + 20..pe + 22].try_into().unwrap()) as usize;
+        for i in 0..count {
+            let h = &dll[start + 40 * i..start + 40 * (i + 1)];
+            if &h[..5] == b".data" {
+                let vs = u32::from_le_bytes(h[8..12].try_into().unwrap()) as usize;
+                let raw = u32::from_le_bytes(h[16..20].try_into().unwrap()) as usize;
+                let ptr = u32::from_le_bytes(h[20..24].try_into().unwrap()) as usize;
+                return dll[ptr..ptr + vs.min(raw)].to_vec();
+            }
+        }
+        panic!("no .data");
+    }
+
+    const HEAD: &str = ".section .data\n.globl mono_aot_file_info\nmono_aot_file_info:\n";
+
+    fn link(body: &str) -> Result<Vec<u8>, String> {
+        write(&assemble(&format!("{}{}", HEAD, body))?, "t.dll")
+    }
+
+    // The four cases from the differential review against LLVM's assembler and lld.
+    #[test]
+    fn matches_llvm_on_review_cases() {
+        // A '.' in an assignment is its definition point: x = 1, as LLVM emits.
+        let d = data_section(&link("f:\n.byte 0\nx = . - f\n.skip 4\n.long x\n").unwrap());
+        assert_eq!(&d[5..9], &1u32.to_le_bytes());
+        // .balign 16,0,4 after one byte inserts nothing.
+        assert_eq!(&data_section(&link(".byte 1\n.balign 16,0,4\n.byte 2\n").unwrap())[..2], &[1, 2]);
+        // An oversized alignment exponent is an error, not a wrapped shift.
+        assert!(link(".byte 1\n.p2align 64\n.byte 2\n").is_err());
+        // A truncated .pdata is an error.
+        assert!(link(".byte 0\n.section .pdata\n.byte 1\n").is_err());
+    }
+
+    #[test]
+    fn validates_pdata_records() {
+        let with = |pdata: &str| {
+            link(&format!(".byte 0\n.section .text\nf:\n.byte 0xC3\ng:\n.byte 0xC3\nh:\n.section .xdata\nu:\n.byte 1,0,0,0\n.section .pdata\n{}", pdata))
+        };
+        assert!(with(".long f@IMGREL, g@IMGREL, u@IMGREL\n.long g@IMGREL, h@IMGREL, u@IMGREL\n").is_ok());
+        assert!(with(".long g@IMGREL, h@IMGREL, u@IMGREL\n.long f@IMGREL, g@IMGREL, u@IMGREL\n").is_err(), "out of order");
+        assert!(with(".long g@IMGREL, f@IMGREL, u@IMGREL\n").is_err(), "empty range");
+        assert!(with(".long f@IMGREL, g@IMGREL, 0\n").is_err(), "no unwind info");
+    }
+
+    #[test]
+    fn relocates_absolute_addresses() {
+        let d = data_section(&link(".quad target\n.long target - .\ntarget:\n").unwrap());
+        assert!(u64::from_le_bytes(d[..8].try_into().unwrap()) > IMAGE_BASE, "a 64-bit address includes the image base");
+        assert_eq!(u32::from_le_bytes(d[8..12].try_into().unwrap()), 4, "a difference does not");
+        assert!(link(".long target\ntarget:\n").is_err(), "absolute address in 4 bytes");
+        assert!(link(".quad nowhere\n").is_err(), "undefined symbol");
+    }
 }
