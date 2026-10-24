@@ -87,9 +87,15 @@ namespace FastBoot.DragCubes
         {
             if (!enabled || fingerprints != null)
                 return;
+            regenerating = !File.Exists(Database);
+            if (!regenerating)
+            {
+                // Nothing to restore and nothing KSP will render: the cache stays as the last mod change left it.
+                Log.Info("drag cube cache: PartDatabase.cfg is intact, nothing to do");
+                return;
+            }
             Guard("fingerprinting", () =>
             {
-                regenerating = !File.Exists(Database);
                 var clock = Stopwatch.StartNew();
                 fingerprints = FingerprintAll();
                 fingerprintMs = clock.Elapsed.TotalMilliseconds;
@@ -181,6 +187,7 @@ namespace FastBoot.DragCubes
             string gameData = Path.Combine(root, "GameData");
             string global = GlobalKey();
             var folders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var modFolders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var modules = new Dictionary<string, string>(StringComparer.Ordinal);
             var result = new Dictionary<string, string>(StringComparer.Ordinal);
             unresolvedModules = 0;
@@ -194,6 +201,15 @@ namespace FastBoot.DragCubes
                         folders[f] = s = Fingerprint.FolderStamp(f);
                     return s;
                 }).ToList();
+                // Everything in the part's own mod folder: a mod update re-renders all of that mod's parts.
+                string modFolder = Fingerprint.ModFolder(uc.parent.fullPath, gameData);
+                if (modFolder != null)
+                {
+                    string ms;
+                    if (!modFolders.TryGetValue(modFolder, out ms))
+                        modFolders[modFolder] = ms = Fingerprint.ModFolderStamp(modFolder);
+                    folderStamps.Add(ms);
+                }
                 List<string> moduleStamps = Fingerprint.Modules(part).Select(m =>
                 {
                     string s;
@@ -201,21 +217,30 @@ namespace FastBoot.DragCubes
                         modules[m] = s = ModuleStamp(m);
                     return s;
                 }).ToList();
-                result[uc.url] = Fingerprint.Compute(global, part.ToString(), folderStamps, moduleStamps);
+                string fp = Fingerprint.Compute(global, part.ToString(), folderStamps, moduleStamps);
+                // A module that does not resolve to a class could be anything: never reuse such a part's cubes.
+                result[uc.url] = moduleStamps.Any(m => m.EndsWith(Unresolved, StringComparison.Ordinal)) ? Fingerprint.Ineligible + fp : fp;
             }
             return result;
         }
 
+        private const string Unresolved = " unresolved";
+
+        /// The module's class and every class it derives from, by assembly: code in a base class from another
+        /// assembly can change the part as much as the module's own.
         private static string ModuleStamp(string name)
         {
             Type t = AssemblyLoader.GetClassByName(typeof(PartModule), name) ?? typeof(PartModule).Assembly.GetType(name, false);
             if (t == null)
             {
                 unresolvedModules++;
-                return name + " unresolved";
+                return name + Unresolved;
             }
-            Assembly a = t.Assembly;
-            return name + " " + a.GetName().Name + " " + a.GetName().Version + " " + Fingerprint.Stamp(a.Location);
+            var assemblies = new List<Assembly>();
+            for (Type c = t; c != null && c != typeof(object); c = c.BaseType)
+                if (!assemblies.Contains(c.Assembly))
+                    assemblies.Add(c.Assembly);
+            return name + " " + string.Join(" ", assemblies.Select(a => a.GetName().Name + " " + a.GetName().Version + " " + Fingerprint.Stamp(a.Location)).ToArray());
         }
 
         /// KSP's own assembly, and every assembly with a Harmony patch on drag cube generation (KSPCommunityFixes
@@ -249,7 +274,7 @@ namespace FastBoot.DragCubes
             string dir = Path.Combine(PluginData, "Diagnostics");
             Directory.CreateDirectory(dir);
             if (!string.IsNullOrEmpty(snapshot))
-                File.WriteAllText(Path.Combine(dir, "PartDatabase-before-last-mod-change.cfg"), snapshot);
+                File.WriteAllText(Path.Combine(dir, "PartDatabase-before-last-mod-change.txt"), snapshot); // not .cfg: never a config
 
             var rendered = current.Order.Where(u => !Restored.Contains(u)).ToList();
             var sb = new StringBuilder();

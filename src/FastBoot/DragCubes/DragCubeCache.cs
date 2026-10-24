@@ -14,8 +14,10 @@ namespace FastBoot.DragCubes
     ///     C &lt;tab&gt; cube line as in PartDatabase.cfg
     internal sealed class DragCubeCache
     {
-        private const string Header = "# FastBoot drag cube cache v2";
-        private const string HeaderV1 = "# FastBoot drag cube cache v1";
+        // v3: stable means an identical re-render (v2 also accepted rounding) and fingerprints cover more inputs, so
+        // older caches load with every part unverified.
+        private const string Header = "# FastBoot drag cube cache v3";
+        private static readonly string[] OlderHeaders = { "# FastBoot drag cube cache v1", "# FastBoot drag cube cache v2" };
 
         public enum State
         {
@@ -43,8 +45,9 @@ namespace FastBoot.DragCubes
             if (!File.Exists(path))
                 return cache;
             string[] lines = File.ReadAllLines(path);
-            if (lines.Length == 0 || (lines[0] != Header && lines[0] != HeaderV1))
+            if (lines.Length == 0 || (lines[0] != Header && Array.IndexOf(OlderHeaders, lines[0]) < 0))
                 return cache; // unknown format: start over
+            bool older = lines[0] != Header;
             Entry current = null;
             foreach (string line in lines)
             {
@@ -52,7 +55,7 @@ namespace FastBoot.DragCubes
                 if (f[0] == "V" && f.Length == 2)
                     cache.Version = f[1];
                 else if (f[0] == "P" && (f.Length == 3 || f.Length == 4))
-                    cache.Parts[f[1]] = current = new Entry { Fingerprint = f[2], State = f.Length == 4 ? ParseState(f[3]) : State.Unverified };
+                    cache.Parts[f[1]] = current = new Entry { Fingerprint = f[2], State = f.Length == 4 && !older ? ParseState(f[3]) : State.Unverified };
                 else if (f[0] == "C" && f.Length == 2 && current != null)
                     current.Cubes.Add(f[1]);
             }
@@ -97,7 +100,8 @@ namespace FastBoot.DragCubes
             foreach (KeyValuePair<string, string> kv in fingerprints)
             {
                 Entry e;
-                if (Parts.TryGetValue(kv.Key, out e) && e.Fingerprint == kv.Value && e.State == State.Stable && e.Cubes.Count > 0)
+                if (!kv.Value.StartsWith(Fingerprint.Ineligible, StringComparison.Ordinal)
+                    && Parts.TryGetValue(kv.Key, out e) && e.Fingerprint == kv.Value && e.State == State.Stable && e.Cubes.Count > 0)
                     result[kv.Key] = e.Cubes;
             }
             return result;
@@ -112,7 +116,8 @@ namespace FastBoot.DragCubes
             if (previous.State == State.Unstable)
                 return State.Unstable; // once seen to vary, always rendered
             double worst;
-            bool same = DragCubeFile.Compare(previous.Cubes, cubes, out worst) != DragCubeFile.Match.Different;
+            // Only an identical render counts: "within rounding" is a different render, so such parts stay rendered.
+            bool same = DragCubeFile.Compare(previous.Cubes, cubes, out worst) == DragCubeFile.Match.Identical;
             if (!fresh)
                 // Loaded or restored, not rendered: proves nothing new, but cubes that changed without a render
                 // (another tool edited the file) are no longer the verified ones.

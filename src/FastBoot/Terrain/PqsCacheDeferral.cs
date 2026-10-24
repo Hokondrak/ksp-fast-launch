@@ -76,18 +76,28 @@ namespace FastBoot.Terrain
                 Unassigned.SetValue(__instance, Activator.CreateInstance(Unassigned.FieldType, count));
                 AssignedCount.SetValue(__instance, 0);
                 Ready.SetValue(__instance, true);
-                var onReady = OnReady.GetValue(__instance) as Delegate;
-                if (onReady != null)
-                    onReady.DynamicInvoke();
-                OnReady.SetValue(__instance, null);
                 deferredCache = __instance;
                 target = count;
+                // Cleared before it runs, as stock does after: if a listener throws and stock CreateCache runs as the
+                // fallback, it must not run the listeners a second time.
+                var onReady = OnReady.GetValue(__instance) as Delegate;
+                OnReady.SetValue(__instance, null);
+                if (onReady != null)
+                    onReady.DynamicInvoke();
                 Log.Info("terrain cache: pre-building " + count + " quads after the loading screen instead of now");
                 return false;
             }
             catch (Exception ex)
             {
+                // The pool is set up; only a listener failed. Build the quads now, as stock would have.
+                bool setUp = deferredCache != null;
+                deferredCache = null;
                 Log.Warning("terrain cache deferral failed, KSP builds the cache now as usual: " + ex.Message);
+                if (setUp)
+                {
+                    Increase.Invoke(__instance, new object[] { target });
+                    return false;
+                }
                 return true;
             }
         }

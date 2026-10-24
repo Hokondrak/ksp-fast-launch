@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 
 namespace FastBoot.ConfigParsing
@@ -34,7 +35,8 @@ namespace FastBoot.ConfigParsing
             try
             {
                 Elapsed.Start();
-                string[] files = Directory.GetFiles(gameDataDir, "*.cfg", SearchOption.AllDirectories);
+                // GameDatabase never loads PluginData folders, so neither does the prefetch.
+                string[] files = Directory.GetFiles(gameDataDir, "*.cfg", SearchOption.AllDirectories).Where(f => !InPluginData(f, gameDataDir)).ToArray();
                 var idx = new Dictionary<string, int>(files.Length);
                 var len = new long[files.Length];
                 var ticks = new long[files.Length];
@@ -65,6 +67,12 @@ namespace FastBoot.ConfigParsing
                 Elapsed.Stop();
                 done.Set();
             }
+        }
+
+        private static bool InPluginData(string file, string gameDataDir)
+        {
+            string rel = file.Substring(Math.Min(file.Length, gameDataDir.Length));
+            return rel.Split('/', '\\').Any(seg => string.Equals(seg, "PluginData", StringComparison.OrdinalIgnoreCase));
         }
 
         /// The pre-parsed lines for `path` if it was prefetched and is unchanged since; otherwise false.

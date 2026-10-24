@@ -98,12 +98,15 @@ namespace FastBoot.Tests
             bool ok = back.Version == cache.Version && back.Parts.Count == 2 && back.Parts["Mod/Parts/a/a"].Fingerprint == "ab12"
                 && back.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Stable && back.Parts["Mod/Parts/b/b"].State == DragCubeCache.State.Unstable
                 && back.Parts["Mod/Parts/a/a"].Cubes.SequenceEqual(cache.Parts["Mod/Parts/a/a"].Cubes) && back.Parts["Mod/Parts/b/b"].Cubes.Count == 0;
-            // A version 1 cache (no states) loads with every part unverified.
+            // Older caches (v1 without states, v2 with the looser stability rule) load with every part unverified.
             File.WriteAllLines(path, new[] { "# FastBoot drag cube cache v1", "V\tv", "P\tMod/Parts/a/a\tab12", "C\tcube = Default, 1,2,3" });
             DragCubeCache v1 = DragCubeCache.Load(path);
+            File.WriteAllLines(path, new[] { "# FastBoot drag cube cache v2", "V\tv", "P\tMod/Parts/a/a\tab12\tstable", "C\tcube = Default, 1,2,3" });
+            DragCubeCache v2 = DragCubeCache.Load(path);
             File.Delete(path);
-            ok = ok && v1.Parts.Count == 1 && v1.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Unverified && v1.Parts["Mod/Parts/a/a"].Cubes.Count == 1;
-            Console.WriteLine("drag cube cache file: " + (ok ? "round trip exact, version 1 files load as unverified" : "ROUND TRIP BROKEN"));
+            ok = ok && v1.Parts.Count == 1 && v1.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Unverified && v1.Parts["Mod/Parts/a/a"].Cubes.Count == 1
+                && v2.Parts["Mod/Parts/a/a"].State == DragCubeCache.State.Unverified;
+            Console.WriteLine("drag cube cache file: " + (ok ? "round trip exact, older versions load as unverified" : "ROUND TRIP BROKEN"));
             return ok ? 0 : 1;
         }
 
@@ -123,7 +126,7 @@ namespace FastBoot.Tests
                 Tuple.Create("new part", (DragCubeCache.Entry)null, "f", same, true, V),
                 Tuple.Create("inputs changed", prev(S), "g", same, true, V),
                 Tuple.Create("rendered the same again", prev(V), "f", same, true, S),
-                Tuple.Create("rendered within rounding", prev(V), "f", rounding, true, S),
+                Tuple.Create("rendered within rounding", prev(V), "f", rounding, true, U),
                 Tuple.Create("rendered differently", prev(V), "f", other, true, U),
                 Tuple.Create("stable, rendered differently", prev(S), "f", other, true, U),
                 Tuple.Create("unstable stays unstable", prev(U), "f", same, true, U),
@@ -147,7 +150,9 @@ namespace FastBoot.Tests
             cache.Parts["unverified"] = prev(V);
             cache.Parts["changed"] = prev(S);
             cache.Parts["empty"] = new DragCubeCache.Entry { Fingerprint = "f", State = S };
-            var fps = new Dictionary<string, string> { { "stable", "f" }, { "unstable", "f" }, { "unverified", "f" }, { "changed", "g" }, { "empty", "f" }, { "uncached", "f" } };
+            cache.Parts["ineligible"] = new DragCubeCache.Entry { Fingerprint = Fingerprint.Ineligible + "f", State = S, Cubes = { cube } };
+            var fps = new Dictionary<string, string> { { "stable", "f" }, { "unstable", "f" }, { "unverified", "f" }, { "changed", "g" }, { "empty", "f" }, { "uncached", "f" },
+                { "ineligible", Fingerprint.Ineligible + "f" } };
             Dictionary<string, List<string>> reusable = cache.Reusable(fps);
             if (reusable.Count != 1 || !reusable.ContainsKey("stable"))
                 failures += Fail("reusable parts: " + string.Join(", ", reusable.Keys.ToArray()) + ", expected only 'stable'");
@@ -163,6 +168,7 @@ namespace FastBoot.Tests
             int parts = 0, none = 0, missing = 0;
             // Empty files make stock log through Unity, which does not exist offline; they hold no parts anyway.
             foreach (string file in Directory.GetFiles(o.GameData, "*.cfg", SearchOption.AllDirectories)
+                .Where(f => f.IndexOf(Path.DirectorySeparatorChar + "PluginData" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) < 0)
                 .Where(f => new FileInfo(f).Length > 0 && File.ReadAllLines(f).Any(l => l.Trim().Length > 0)))
             {
                 ConfigNode root = ConfigNode.Load(file);
@@ -189,7 +195,25 @@ namespace FastBoot.Tests
                 Fingerprint.Compute("g", "PART { name = x }", new[] { "F1" }, new[] { "M2" }),
             }.All(x => x != f1);
             Console.WriteLine("fingerprint: " + (stable ? "stable" : "UNSTABLE") + ", " + (sensitive ? "changes with every input" : "MISSES AN INPUT"));
-            return parts > 0 && none == 0 && stable && sensitive ? 0 : 1;
+
+            // Mod folder: found for a part file, stamped without PluginData, and sensitive to a file change.
+            string dir = Path.Combine(Path.GetTempPath(), "fastboot-modfolder-" + System.Diagnostics.Process.GetCurrentProcess().Id);
+            string gd = Path.Combine(dir, "GameData");
+            Directory.CreateDirectory(Path.Combine(Path.Combine(gd, "ModA"), Path.Combine("Parts", "p")));
+            Directory.CreateDirectory(Path.Combine(Path.Combine(gd, "ModA"), "PluginData"));
+            string partFile = Path.Combine(Path.Combine(Path.Combine(gd, "ModA"), Path.Combine("Parts", "p")), "p.cfg");
+            File.WriteAllText(partFile, "PART {}");
+            string mod = Fingerprint.ModFolder(partFile, gd);
+            string before = Fingerprint.ModFolderStamp(mod);
+            File.WriteAllText(Path.Combine(Path.Combine(Path.Combine(gd, "ModA"), "PluginData"), "runtime.txt"), "changes every boot");
+            bool ignoresPluginData = Fingerprint.ModFolderStamp(mod) == before;
+            File.WriteAllText(Path.Combine(Path.Combine(gd, "ModA"), "readme.txt"), "new file");
+            bool seesChange = Fingerprint.ModFolderStamp(mod) != before;
+            bool found = mod != null && Path.GetFileName(mod) == "ModA" && Fingerprint.ModFolder(Path.Combine(gd, "loose.cfg"), gd) == null;
+            Directory.Delete(dir, true);
+            Console.WriteLine("mod folder key: {0}, {1}, {2}", found ? "found" : "NOT FOUND", ignoresPluginData ? "ignores PluginData" : "SEES PLUGINDATA",
+                seesChange ? "sees a new file" : "MISSES A NEW FILE");
+            return parts > 0 && none == 0 && stable && sensitive && found && ignoresPluginData && seesChange ? 0 : 1;
         }
     }
 }

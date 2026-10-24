@@ -19,7 +19,46 @@ namespace FastBoot.DragCubes
     /// - a global key: KSP's own assembly and every assembly that patches drag cube generation.
     internal static class Fingerprint
     {
-        public const string Format = "fastboot-dragcube-1";
+        public const string Format = "fastboot-dragcube-2";
+
+        /// Prefix of the fingerprint of a part whose cubes must never be reused.
+        public const string Ineligible = "ineligible-";
+
+        /// The top-level GameData folder `partFile` belongs to (its mod), or null outside GameData.
+        public static string ModFolder(string partFile, string gameData)
+        {
+            string full = Path.GetFullPath(partFile);
+            string root = Path.GetFullPath(gameData).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                return null;
+            string rest = full.Substring(root.Length);
+            int sep = rest.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+            return sep <= 0 ? null : Path.Combine(root, rest.Substring(0, sep));
+        }
+
+        /// Every file under `folder` except in PluginData folders (written at runtime, never loaded by KSP), by
+        /// relative path, size and timestamp, hashed into one line.
+        public static string ModFolderStamp(string folder)
+        {
+            if (!Directory.Exists(folder))
+                return "mod " + folder + ": missing";
+            var lines = new List<string>();
+            string prefix = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            foreach (string f in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
+            {
+                string rel = Path.GetFullPath(f).Substring(prefix.Length);
+                if (rel.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(s => string.Equals(s, "PluginData", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                var fi = new FileInfo(f);
+                lines.Add(rel + "=" + fi.Length.ToString(CultureInfo.InvariantCulture) + "@" + fi.LastWriteTimeUtc.Ticks.ToString(CultureInfo.InvariantCulture));
+            }
+            lines.Sort(StringComparer.Ordinal);
+            using (var sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", lines.ToArray())));
+                return "mod " + Path.GetFileName(folder) + " " + lines.Count + " files " + BitConverter.ToString(hash).Replace("-", "");
+            }
+        }
 
         /// Folders whose files can change how `part` renders. `partFile` is the .cfg the part is defined in.
         public static List<string> ModelFolders(ConfigNode part, string partFile, string gameData)

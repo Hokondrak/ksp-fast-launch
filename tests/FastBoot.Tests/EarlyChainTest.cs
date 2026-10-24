@@ -70,7 +70,9 @@ namespace FastBoot.Tests
             ConfigPatchTest.CountKspcfReads(perf);
             Console.WriteLine("ConfigNode.Load prefixes = " + ConfigLoadPatch.PatchGraph());
 
+            // What GameDatabase loads: never PluginData folders, which the prefetch skips too.
             string[] files = Directory.GetFiles(o.GameData, "*.cfg", SearchOption.AllDirectories)
+                .Where(f => f.IndexOf(Path.DirectorySeparatorChar + "PluginData" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) < 0)
                 .Where(f => new FileInfo(f).Length > 0 && File.ReadAllLines(f).Length > 0).ToArray();
             var stockRef = files.ToDictionary(f => f, f => StockParser.Tree(StockParser.PreFormat(File.ReadAllLines(f))));
             MethodInfo load = ConfigLoadPatch.LoadMethod();
