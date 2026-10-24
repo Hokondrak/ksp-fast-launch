@@ -20,7 +20,8 @@ namespace FastBoot.Tests
     {
         private static readonly HashSet<string> MainThreadOnly = new HashSet<string>
         {
-            "FastBootAddon.Awake", "FastBootAddon.StartDiagnostics",
+            "FastBootAddon.Awake", "FastBootAddon.StartDiagnostics", "FastBootAddon.StartProfiler",
+            "PhaseProfiler.Awake", "PhaseProfiler.OnDestroy", "BootFinishedAddon.Start",
             "BootProfiler.Awake", "BootProfiler.SampleMemory", "BootProfiler.Finish",
             "Sampler.mono_pmip", "Sampler.mono_free", // Unity's Mono exports; they exist only inside KSP
         };
@@ -30,7 +31,38 @@ namespace FastBoot.Tests
             int failures = JitCheck();
             failures += Replay(Path.Combine(o.Ksp, "KSP.log"));
             failures += SamplerMechanics();
+            failures += ProfileSummary();
             return failures == 0 ? 0 : 1;
+        }
+
+        /// The profile report from synthetic samples: shares, frame-name cleaning, inclusive counting once per sample.
+        private static int ProfileSummary()
+        {
+            Func<string, string[], StackSample> s = (module, frames) => new StackSample { Module = module, Managed = frames };
+            var samples = new List<StackSample>
+            {
+                s("UnityPlayer.dll", new[] { "PartLoader:CompileModel () {0000AAAA}", "PartLoader:ParsePart () {0000BBBB}", "PartLoader:ParsePart () {0000CCCC}" }),
+                s("UnityPlayer.dll", new[] { "PartLoader:CompileModel () {0000AAAA}", "PartLoader:ParsePart () {0000BBBB}" }),
+                s("mono-2.0-bdwgc.dll", new[] { "PartModule:Load (ConfigNode) {0000DDDD}", "PartLoader:ParsePart () {0000BBBB}" }),
+                s("ntdll.dll", new string[0]),
+            };
+            string report = PhaseProfiler.Summarize(samples, 0.008, PhaseProfiler.Find("parts"), null);
+            var expect = new[]
+            {
+                "-  50.0 %       2  PartLoader:CompileModel ()",   // self
+                "-  75.0 %       3  PartLoader:ParsePart ()",      // inclusive, counted once although it appears twice
+                "-  25.0 %       1  (no managed frame)",
+                "-  50.0 %       2  UnityPlayer.dll",
+            };
+            int failed = expect.Count(e => !report.Contains(e));
+            if (failed > 0 || report.Contains("{0000"))
+            {
+                Console.WriteLine("PROFILE REPORT WRONG:");
+                Console.WriteLine(report);
+                return 1;
+            }
+            Console.WriteLine("profile report: shares, cleaning and inclusive counting correct");
+            return 0;
         }
 
         private static int JitCheck()

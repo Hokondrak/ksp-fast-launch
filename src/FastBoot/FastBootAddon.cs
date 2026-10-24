@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using FastBoot.ConfigParsing;
 using FastBoot.Diagnostics;
@@ -29,6 +30,9 @@ namespace FastBoot
                     Path.Combine(Path.Combine(home, "PluginData"), "readlist.txt"));
             if (settings.Diagnostics)
                 StartDiagnostics(home, settings);
+            if (settings.Profile.Length > 0)
+                StartProfiler(home, settings.Profile);
+            PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "when FastBoot's addon started");
             if (settings.ConfigParser)
             {
                 if (ConfigLoadPatch.Installed)
@@ -49,6 +53,8 @@ namespace FastBoot
             string gameData = Path.Combine(kspRoot, "GameData");
             string home = ModFolder();
             Settings settings = Settings.Load(Path.Combine(home, "FastBoot.cfg"));
+            PartDatabaseWatch.Enabled = settings.Profile.Length > 0;
+            PartDatabaseWatch.Note(kspRoot, "at early start");
             if (!settings.ConfigParser)
                 return;
             // KspFastCfg's assembly is not loaded yet, so look for it on disk; Awake reports the skip.
@@ -67,6 +73,29 @@ namespace FastBoot
             BootProfiler.OutputDirectory = Path.Combine(Path.Combine(home, "PluginData"), "Diagnostics");
             BootProfiler.EnableSampler = settings.StallSampler && NativeLibrary.Current == NativeLibrary.Platform.Windows;
             gameObject.AddComponent<BootProfiler>();
+        }
+
+        /// ModuleManager calls this on every loaded mod once it has applied all patches, just before KSP's
+        /// PartLoader reads PartDatabase.cfg.
+        public static void ModuleManagerPostLoad()
+        {
+            PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "after ModuleManager's patching");
+        }
+
+        private void StartProfiler(string home, string name)
+        {
+            PartDatabaseWatch.Enabled = true;
+            PhaseProfiler.Window window = PhaseProfiler.Find(name);
+            if (window == null || NativeLibrary.Current != NativeLibrary.Platform.Windows)
+            {
+                Log.Warning("profiler not started: " + (window == null
+                    ? "unknown Profile '" + name + "'; known: " + string.Join(", ", PhaseProfiler.Windows.Select(w => w.Name).ToArray())
+                    : "it needs Windows"));
+                return;
+            }
+            PhaseProfiler.OutputDirectory = Path.Combine(Path.Combine(home, "PluginData"), "Diagnostics");
+            PhaseProfiler.Selected = window;
+            gameObject.AddComponent<PhaseProfiler>();
         }
 
         private static void StartConfigParser(string home, string gameData, Settings settings)

@@ -26,6 +26,9 @@ namespace FastBoot
         /// early-start loader reads this key itself, before any managed code runs.
         public bool Warmup = true;
 
+        /// Name of a boot stretch to profile continuously (Diagnostics.PhaseProfiler.Windows), or empty for none.
+        public string Profile = "";
+
         public static Settings Load(string path)
         {
             var s = new Settings();
@@ -40,6 +43,7 @@ namespace FastBoot
                     case "Diagnostics": s.Diagnostics = Bool(kv, s.Diagnostics); break;
                     case "StallSampler": s.StallSampler = Bool(kv, s.StallSampler); break;
                     case "Warmup": s.Warmup = Bool(kv, s.Warmup); break;
+                    case "Profile": s.Profile = kv.Value; break;
                     default: Log.Warning("unknown setting '" + kv.Key + "' in " + path); break;
                 }
             }
@@ -56,7 +60,8 @@ namespace FastBoot
         public override string ToString()
         {
             return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, Diagnostics={3}, StallSampler={4}",
-                ConfigParser, EffectiveThreads(), Warmup, Diagnostics, StallSampler);
+                ConfigParser, EffectiveThreads(), Warmup, Diagnostics, StallSampler)
+                + (Profile.Length > 0 ? ", Profile=" + Profile : "");
         }
 
         private static IEnumerable<KeyValuePair<string, string>> ReadPairs(string path)
