@@ -1,6 +1,6 @@
 //! The hook chain: player's `GetProcAddress` -> `mono_jit_init_version` -> `FastBoot.Early.Bootstrap.Start`.
 
-use crate::{iat, log, win};
+use crate::{boot_reads, iat, log, win};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -61,7 +61,8 @@ impl Config {
     }
 }
 
-/// Runs under the loader lock from DllMain: only reads the environment, opens the log and rewrites import slots.
+/// Runs under the loader lock from DllMain: reads the environment and one settings file, opens the log, starts
+/// the warm-up thread and rewrites import slots.
 pub unsafe fn attach() {
     let Some(cfg) = Config::from_env() else { return };
     log::open(&cfg.plugin_data().join("early.log"));
@@ -70,11 +71,13 @@ pub unsafe fn attach() {
         log::line(&format!("off: {}", why));
         return;
     }
+    boot_reads::start(&cfg.root, &cfg.plugin_data());
     let target = win::GetModuleHandleW(win::wide(cfg.target.as_ref()).as_ptr());
     if target.is_null() {
         log::line(&format!("off: {} is not loaded in this process", cfg.target));
         return;
     }
+    boot_reads::record_opens_in(target, &cfg.target);
     let gpa = win::kernel32_get_proc_address();
     REAL_GET_PROC_ADDRESS.store(gpa, Ordering::Release);
     TARGET.store(target as usize, Ordering::Release);
@@ -100,6 +103,8 @@ unsafe extern "system" fn get_proc_address(module: win::Hmodule, name: *const c_
     REAL_JIT_INIT.store(p as usize, Ordering::Release);
     MONO.store(module as usize, Ordering::Release);
     log::line("intercepted mono_jit_init_version");
+    // Mono was just loaded: from here on it opens every managed assembly and every file the game reads.
+    boot_reads::record_opens_in(module, "Mono");
     jit_init_version as *mut c_void
 }
 

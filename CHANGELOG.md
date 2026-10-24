@@ -10,6 +10,9 @@ Not yet run in game; see "Not done yet" in the README.
   it is guarded as soon as its assembly loads.
 - Optional early start (`version.dll`, Windows): installs the config parser before KSP's first config scan.
   It can be switched off by file, environment variable or deletion, and writes its own `early.log`.
+- Cold-start warm-up: reads the files KSP will load into the OS file cache ahead of it, in boot order, in
+  parallel on SSDs. It stays within half the free memory. With the early-start loader it starts at process start,
+  and it learns the exact file list from each boot (`PluginData/readlist.txt`).
 - Diagnostics: per-launch boot timing report and an optional main-thread stall sampler (off by default).
 - `ksplaunch`: measuring launcher with per-phase CPU, memory, disk and GPU telemetry.
 - Rust binaries link the C runtime statically, so they need no Visual C++ redistributable.

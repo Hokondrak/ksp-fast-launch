@@ -18,6 +18,7 @@ extern "system" {
     pub fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
     pub fn VirtualProtect(addr: *mut c_void, size: usize, protect: u32, old: *mut u32) -> i32;
     pub fn SetLastError(code: u32);
+    pub fn GetLastError() -> u32;
     pub fn DisableThreadLibraryCalls(module: Hmodule) -> i32;
 }
 

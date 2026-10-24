@@ -22,6 +22,10 @@ namespace FastBoot
         /// Stack-sample the main thread during freezes (needs Diagnostics). Suspends the main thread briefly.
         public bool StallSampler;
 
+        /// Read the files KSP is about to load into the OS file cache ahead of it (cold-start warm-up). The
+        /// early-start loader reads this key itself, before any managed code runs.
+        public bool Warmup = true;
+
         public static Settings Load(string path)
         {
             var s = new Settings();
@@ -35,6 +39,7 @@ namespace FastBoot
                     case "ConfigParserThreads": s.ConfigParserThreads = Int(kv, s.ConfigParserThreads); break;
                     case "Diagnostics": s.Diagnostics = Bool(kv, s.Diagnostics); break;
                     case "StallSampler": s.StallSampler = Bool(kv, s.StallSampler); break;
+                    case "Warmup": s.Warmup = Bool(kv, s.Warmup); break;
                     default: Log.Warning("unknown setting '" + kv.Key + "' in " + path); break;
                 }
             }
@@ -50,8 +55,8 @@ namespace FastBoot
 
         public override string ToString()
         {
-            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Diagnostics={2}, StallSampler={3}",
-                ConfigParser, EffectiveThreads(), Diagnostics, StallSampler);
+            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, Diagnostics={3}, StallSampler={4}",
+                ConfigParser, EffectiveThreads(), Warmup, Diagnostics, StallSampler);
         }
 
         private static IEnumerable<KeyValuePair<string, string>> ReadPairs(string path)

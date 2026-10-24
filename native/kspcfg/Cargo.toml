@@ -7,3 +7,6 @@ license.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fastboot-warm = { path = "../warm" }

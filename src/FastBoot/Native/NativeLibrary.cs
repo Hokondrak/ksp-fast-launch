@@ -86,6 +86,23 @@ namespace FastBoot.Native
             }
         }
 
+        /// A library this process already loaded from exactly `path` (Windows only), without loading anything; null
+        /// if there is none.
+        public static NativeLibrary TryAttach(string path)
+        {
+            if (Current != Platform.Windows)
+                return null;
+            try
+            {
+                IntPtr h = GetModuleHandleW(Path.GetFullPath(path));
+                return h == IntPtr.Zero ? null : new NativeLibrary(h, true);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// The export as a delegate of type T, or null if it is missing.
         public T Function<T>(string export) where T : class
         {
@@ -106,6 +123,9 @@ namespace FastBoot.Native
 
         [DllImport("kernel32", CharSet = CharSet.Ansi, BestFitMapping = false)]
         private static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandleW(string path);
 
         [DllImport("libdl.so.2", EntryPoint = "dlopen")]
         private static extern IntPtr LinuxDlopen(string path, int flags);

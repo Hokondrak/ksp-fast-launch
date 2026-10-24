@@ -10,3 +10,6 @@ license.workspace = true
 name = "version"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
+
+[dependencies]
+fastboot-warm = { path = "../warm" }

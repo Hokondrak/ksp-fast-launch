@@ -23,6 +23,10 @@ namespace FastBoot
             Log.Info(Version() + " on " + NativeLibrary.Current + "; " + settings
                 + (Early.Bootstrap.Started ? "; early start active" : ""));
 
+            // First: the warm-up is only useful while there is still loading ahead of it.
+            if (settings.Warmup)
+                ColdStart.Warmup.Start(KSPUtil.ApplicationRootPath, KspCfgPath(home),
+                    Path.Combine(Path.Combine(home, "PluginData"), "readlist.txt"));
             if (settings.Diagnostics)
                 StartDiagnostics(home, settings);
             if (settings.ConfigParser)
@@ -67,9 +71,14 @@ namespace FastBoot
 
         private static void StartConfigParser(string home, string gameData, Settings settings)
         {
-            string native = Path.Combine(Path.Combine(Path.Combine(Path.Combine(home, "PluginData"), "native"),
+            ConfigLoadPatch.Install(gameData, KspCfgPath(home), settings.EffectiveThreads());
+        }
+
+        /// This platform's build of FastBoot's native library, under PluginData/native.
+        private static string KspCfgPath(string home)
+        {
+            return Path.Combine(Path.Combine(Path.Combine(Path.Combine(home, "PluginData"), "native"),
                 NativeLibrary.PlatformFolder()), NativeLibrary.FileName("kspcfg"));
-            ConfigLoadPatch.Install(gameData, native, settings.EffectiveThreads());
         }
 
         private void OnDatabaseLoaded()

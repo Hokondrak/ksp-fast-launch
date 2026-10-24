@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using FastBoot.ColdStart;
 using FastBoot.ConfigParsing;
 using FastBoot.Early;
 
@@ -15,7 +16,8 @@ namespace FastBoot.Tests
     /// - the config parser installed itself when Assembly-CSharp loaded, before any addon code,
     /// - KSPCommunityFixes loaded afterwards is guarded the moment it loads,
     /// - every cfg loads to the stock tree in two passes (KSP's scan and KSPCF's), both from the prefetch,
-    /// - KSPCF's own parser runs only for files FastBoot declines.
+    /// - KSPCF's own parser runs only for files FastBoot declines,
+    /// - the warm-up ran, and the main-menu call saved a read list of the files the run opened.
     /// With the loader switched off (FASTBOOT_EARLY_DISABLE=1) nothing may happen at all.
     internal static class EarlyChainTest
     {
@@ -79,7 +81,25 @@ namespace FastBoot.Tests
                     prefetched, declined, 2 * files.Length, direct));
             if (ConfigPatchTest.KspcfReads != declined)
                 failures.Add(string.Format("DOUBLE PARSING: KSPCF's parser ran {0} times, FastBoot declined {1}", ConfigPatchTest.KspcfReads, declined));
-            return Report(failures, string.Format("{0} files x 2 passes equal to stock; KSPCF parsed only the {1} declined loads", files.Length, declined));
+
+            // What FastBoot's addons do in Awake and at the main menu. The loader sits in dist/EarlyStart here,
+            // where in game it sits in the KSP folder.
+            string readlist = Path.Combine(Path.Combine(o.FastBootHome, "PluginData"), "readlist.txt");
+            if (File.Exists(readlist))
+                File.Delete(readlist);
+            Warmup.Start(Path.Combine(o.Dist, "EarlyStart"), o.KspCfgPath, readlist);
+            Warmup.BootFinished();
+            string[] recorded = File.Exists(readlist) ? File.ReadAllLines(readlist).Where(l => !l.StartsWith("#")).ToArray() : new string[0];
+            int recordedCfgs = recorded.Count(l => l.StartsWith("GameData/") && l.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase));
+            Console.WriteLine("read list: {0} files, {1} of them GameData cfg files", recorded.Length, recordedCfgs);
+            if (recordedCfgs < files.Length / 2)
+                failures.Add("the read list misses the cfg files this run opened (" + recordedCfgs + " of " + files.Length + ")");
+            if (recorded.Any(l => l.Contains("\\") || Path.IsPathRooted(l)))
+                failures.Add("the read list has absolute or backslash paths");
+            if (!EarlyLog(o).Contains("warm-up "))
+                failures.Add("early.log does not report the warm-up");
+            return Report(failures, string.Format("{0} files x 2 passes equal to stock; KSPCF parsed only the {1} declined loads; read list saved",
+                files.Length, declined));
         }
 
         private static string EarlyLog(Options o)

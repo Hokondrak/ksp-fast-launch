@@ -337,9 +337,10 @@ pub struct Batch {
     items: Vec<Parsed>,
 }
 
+/// 7 added the warm-up exports.
 #[no_mangle]
 pub extern "C" fn kspcfg_version() -> u32 {
-    6
+    7
 }
 
 /// `path` is UTF-16 (what C# strings are), `len` in UTF-16 code units.
@@ -364,6 +365,30 @@ pub unsafe extern "C" fn kspcfg_parse_many(paths: *const u16, len: usize, thread
     let items = catch_unwind(AssertUnwindSafe(|| parse_many(&list, threads as usize)))
         .unwrap_or_else(|_| list.iter().map(|_| Parsed::status(STATUS_INTERNAL_ERROR)).collect());
     Box::into_raw(Box::new(Batch { items }))
+}
+
+/// Starts FastBoot's cold-start warm-up for the KSP folder `root`, using the read list at `readlist` (both UTF-16).
+/// For installs without the early-start loader, which starts the same warm-up itself at process start. The
+/// handle lives for the rest of the process; null if the thread could not start.
+#[no_mangle]
+pub unsafe extern "C" fn kspcfg_warm_start(root: *const u16, root_len: usize, readlist: *const u16, readlist_len: usize)
+    -> *const fastboot_warm::run::Warmup {
+    let (root, readlist) = (wide_path(root, root_len), wide_path(readlist, readlist_len));
+    match catch_unwind(AssertUnwindSafe(|| fastboot_warm::run::spawn(root, readlist, None))) {
+        Ok(Ok(w)) => Box::into_raw(Box::new(w)),
+        _ => std::ptr::null(),
+    }
+}
+
+/// The warm-up's progress as UTF-16 into `out` (up to `cap` units); returns the full length.
+#[no_mangle]
+pub unsafe extern "C" fn kspcfg_warm_summary(w: *const fastboot_warm::run::Warmup, out: *mut u16, cap: usize) -> usize {
+    let Some(w) = w.as_ref() else { return 0 };
+    let s: Vec<u16> = w.stats.summary().encode_utf16().collect();
+    if !out.is_null() {
+        std::ptr::copy_nonoverlapping(s.as_ptr(), out, s.len().min(cap));
+    }
+    s.len()
 }
 
 #[no_mangle]

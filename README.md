@@ -12,6 +12,7 @@ without changing what the game loads.
 | Part | What | Where |
 | --- | --- | --- |
 | Config parser | Serves `ConfigNode.Load` for GameData `.cfg` files from a native Rust parser (`kspcfg`), pre-parsing every file on worker threads. Tree building stays KSP's own, so the result is identical to stock; files outside the parser's verified fast path go to stock (or KSPCommunityFixes) unchanged. | `GameData/FastBoot` |
+| Cold-start warm-up | On a launch after a reboot, KSP mostly waits for the disk: 139 s against 61 s warm on the reference install, because KSP and Unity read files one at a time. FastBoot reads the same files ahead of the game on 8 threads (1 on a spinning disk), in the order the game will want them, so the game's reads come from memory. With the early-start loader it starts at process start and records which files the boot opens, so the next launch warms exactly those. It reads at most half the free memory and writes nothing but its read list. | `GameData/FastBoot`, best with `EarlyStart/version.dll` |
 | Early start (optional) | A `version.dll` placed next to `KSP_x64.exe` that starts the config parser *before* KSP's first config scan, which runs before any GameData plugin exists. Without it, only the second scan benefits. | `EarlyStart/version.dll` |
 | Diagnostics (off by default) | A boot timing report per launch, and optionally a stall sampler that records what the main thread is doing during freezes. | `GameData/FastBoot/PluginData/Diagnostics` |
 | `ksplaunch` | A measuring launcher: starts KSP, follows its logs and records CPU, memory, disk and GPU per loading phase. | `tools/ksplaunch.exe` |
@@ -50,7 +51,7 @@ the stock code and 5.7 s through kspcfg. That is a measurement of the parser alo
 1. Copy `GameData/FastBoot` into KSP's `GameData`. Requires [HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP).
 2. Optional, Windows only: copy `EarlyStart/version.dll` next to `KSP_x64.exe`.
 
-To switch the early start off, delete `version.dll`, create an empty `GameData/FastBoot/PluginData/disable-early`,
+To switch the warm-up off, set `Warmup = false`. To switch the early start off, delete `version.dll`, create an empty `GameData/FastBoot/PluginData/disable-early`,
 or set `FASTBOOT_EARLY_DISABLE=1`. Each launch's early-start log is `GameData/FastBoot/PluginData/early.log`.
 
 Settings are in `GameData/FastBoot/FastBoot.cfg`:
@@ -59,20 +60,22 @@ Settings are in `GameData/FastBoot/FastBoot.cfg`:
 | --- | --- | --- |
 | `ConfigParser` | `true` | Use the native config parser. |
 | `ConfigParserThreads` | `0` | Pre-parse threads; 0 = CPU threads − 2, at most 8. |
+| `Warmup` | `true` | Cold-start warm-up. |
 | `Diagnostics` | `false` | Write a boot timing report per launch. |
 | `StallSampler` | `false` | With Diagnostics: sample the main thread during freezes (Windows). |
 
 ## Not done yet
 
-These depend on measurements from real launches and are deliberately out of scope until those exist:
+Open, and waiting on measurements or analysis:
 
-- **Texture loading.** Asset bytes are read in about 4 s, but the texture phase takes minutes, and most of it
-  is waiting. After roughly 2.3 GB have loaded, freezes of 51–180 s appear. Whether they come from garbage
-  collection, VRAM or paging decides the fix, so `ksplaunch` and the stall sampler exist to find out first.
-- **GC tuning defaults.** Unity's Mono honours `GC_INITIAL_HEAP_SIZE` and related variables, but no default
-  ships until measured launches show it helps.
-- **Planetary setup** (a 90–110 s freeze on the reference install): not yet analysed.
+- **Cold-start warm-up gain**: needs a launch after a reboot to measure.
+- **Part compilation**, which grows with the number of parts (about 7 ms each; 10.5 s for the reference
+  install's 1,489 parts): not yet analysed.
 - **Speed claims** for whole launches.
+
+Measured and ruled out: a larger initial GC heap (`GC_INITIAL_HEAP_SIZE=4G`) made no difference (61 s against
+62 s). The multi-minute texture and planet-setup freezes seen earlier came from a missing dependency (KSPBurst,
+needed by Parallax), not from KSP itself.
 
 Needs validation in game before a release:
 
@@ -121,7 +124,8 @@ KSP is never started. The script runs:
 
 ```
 native/kspcfg      Rust: the config text parser (cdylib, C ABI)
-native/early       Rust: version.dll proxy and Mono start hook
+native/early       Rust: version.dll proxy, Mono start hook, warm-up start and read recording
+native/warm        Rust: cold-start warm-up (plan, read list, parallel reader)
 src/FastBoot       C#: the mod
 tests/             C#: offline test runner
 tools/ksplaunch    Rust: measuring launcher

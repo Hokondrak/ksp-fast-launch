@@ -17,8 +17,13 @@
 //! changed, and FastBoot's normal GameData addon still starts the parser later. Kill switches: delete this
 //! file, create `GameData/FastBoot/PluginData/disable-early`, or set `FASTBOOT_EARLY_DISABLE=1`.
 //!
+//! The same file also runs FastBoot's cold-start warm-up from process start, and records which files the game
+//! opens while booting so the next warm-up reads exactly those, in that order ([`boot_reads`]).
+//!
 //! What happened is written to `GameData/FastBoot/PluginData/early.log`.
 
+#[cfg(windows)]
+mod boot_reads;
 #[cfg(windows)]
 mod early;
 #[cfg(windows)]

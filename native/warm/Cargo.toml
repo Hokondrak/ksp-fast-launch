@@ -1,0 +1,9 @@
+[package]
+name = "fastboot-warm"
+description = "Cold-start warm-up for FastBoot: reads the files KSP is about to load into the OS file cache, in parallel and in boot order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
