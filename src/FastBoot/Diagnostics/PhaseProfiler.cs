@@ -20,18 +20,24 @@ namespace FastBoot.Diagnostics
 {
     internal sealed class PhaseProfiler : MonoBehaviour
     {
-        /// A stretch of the boot, delimited by the first log line starting with Start and the first after it
-        /// starting with Stop.
+        /// A stretch of the boot, delimited by the first log line starting with any of Start and the first after
+        /// it starting with Stop.
         internal sealed class Window
         {
             public string Name;
-            public string Start;
+            public string[] Start;
             public string Stop;
         }
 
         internal static readonly Window[] Windows =
         {
-            new Window { Name = "parts", Start = "PartLoader: Loading part database", Stop = "PartLoader: Compiling Internal Prop" },
+            // KSP loads the part database when it has one and creates it when ModuleManager deleted it.
+            new Window
+            {
+                Name = "parts",
+                Start = new[] { "PartLoader: Loading part database", "PartLoader: Creating part database" },
+                Stop = "PartLoader: Compiling Internal Prop",
+            },
         };
 
         internal static string OutputDirectory;
@@ -64,7 +70,7 @@ namespace FastBoot.Diagnostics
                 return;
             }
             Application.logMessageReceived += OnLog;
-            Log.Info("profiler armed for '" + Selected.Name + "': from \"" + Selected.Start + "\" to \"" + Selected.Stop + "\"");
+            Log.Info("profiler armed for '" + Selected.Name + "': from \"" + string.Join("\" or \"", Selected.Start) + "\" to \"" + Selected.Stop + "\"");
         }
 
         private void OnDestroy()
@@ -77,7 +83,7 @@ namespace FastBoot.Diagnostics
         {
             if (done || message == null)
                 return;
-            if (!running && message.StartsWith(Selected.Start, StringComparison.Ordinal))
+            if (!running && Selected.Start.Any(s => message.StartsWith(s, StringComparison.Ordinal)))
                 Begin();
             else if (running && message.StartsWith(Selected.Stop, StringComparison.Ordinal))
                 End(null);
@@ -144,7 +150,7 @@ namespace FastBoot.Diagnostics
             sb.AppendLine("# FastBoot profile: " + window.Name);
             sb.AppendLine();
             sb.AppendLine(string.Format(inv, "From \"{0}\" to \"{1}\": {2:F2} s, {3} samples (one every {4:F1} ms).",
-                window.Start, window.Stop, seconds, n, n == 0 ? 0 : seconds * 1000 / n));
+                string.Join("\" or \"", window.Start), window.Stop, seconds, n, n == 0 ? 0 : seconds * 1000 / n));
             if (note != null)
                 sb.AppendLine().AppendLine("Note: " + note + ".");
             sb.AppendLine();

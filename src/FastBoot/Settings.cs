@@ -26,6 +26,9 @@ namespace FastBoot
         /// early-start loader reads this key itself, before any managed code runs.
         public bool Warmup = true;
 
+        /// Serve GameDatabase's by-name audio lookups from an index instead of a scan of every clip.
+        public bool FastLookups = true;
+
         /// Name of a boot stretch to profile continuously (Diagnostics.PhaseProfiler.Windows), or empty for none.
         public string Profile = "";
 
@@ -43,6 +46,7 @@ namespace FastBoot
                     case "Diagnostics": s.Diagnostics = Bool(kv, s.Diagnostics); break;
                     case "StallSampler": s.StallSampler = Bool(kv, s.StallSampler); break;
                     case "Warmup": s.Warmup = Bool(kv, s.Warmup); break;
+                    case "FastLookups": s.FastLookups = Bool(kv, s.FastLookups); break;
                     case "Profile": s.Profile = kv.Value; break;
                     default: Log.Warning("unknown setting '" + kv.Key + "' in " + path); break;
                 }
@@ -59,8 +63,8 @@ namespace FastBoot
 
         public override string ToString()
         {
-            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, Diagnostics={3}, StallSampler={4}",
-                ConfigParser, EffectiveThreads(), Warmup, Diagnostics, StallSampler)
+            return string.Format(CultureInfo.InvariantCulture, "ConfigParser={0} (threads {1}), Warmup={2}, FastLookups={3}, Diagnostics={4}, StallSampler={5}",
+                ConfigParser, EffectiveThreads(), Warmup, FastLookups, Diagnostics, StallSampler)
                 + (Profile.Length > 0 ? ", Profile=" + Profile : "");
         }
 

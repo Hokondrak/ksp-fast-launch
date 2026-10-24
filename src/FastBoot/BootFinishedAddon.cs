@@ -16,6 +16,9 @@ namespace FastBoot
             // Kept alive only for OnApplicationQuit; it does nothing per frame.
             DontDestroyOnLoad(gameObject);
             ColdStart.Warmup.BootFinished();
+            if (Lookups.AudioLookupPatch.Installed)
+                Log.Info("fast audio lookup: " + Lookups.AudioLookupPatch.Calls + " lookups, index built "
+                    + Lookups.AudioLookupPatch.Rebuilds + " times");
             Diagnostics.PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "at the main menu");
         }
     }

@@ -41,7 +41,7 @@ Copy-Item (Join-Path $root "target\release\version.dll") $early -Force
 Copy-Item (Join-Path $root "target\release\ksplaunch.exe") (Join-Path $dist "tools") -Force
 
 # 3. FastBoot.dll, against KSP's own Unity/Mono profile assemblies.
-$refs = "mscorlib", "System", "System.Core", "UnityEngine", "UnityEngine.CoreModule", "Assembly-CSharp" |
+$refs = "mscorlib", "System", "System.Core", "UnityEngine", "UnityEngine.CoreModule", "UnityEngine.AudioModule", "Assembly-CSharp" |
     ForEach-Object { "-r:" + (Join-Path $managed "$_.dll") }
 $sources = Get-ChildItem (Join-Path $root "src\FastBoot") -Recurse -Filter *.cs | ForEach-Object { $_.FullName }
 Invoke-Checked "csc FastBoot.dll" {
@@ -55,7 +55,7 @@ New-Item -ItemType Directory -Force $testOut | Out-Null
 $testSources = Get-ChildItem (Join-Path $root "tests\FastBoot.Tests") -Filter *.cs | ForEach-Object { $_.FullName }
 Invoke-Checked "csc FastBoot.Tests.exe" {
     & $csc -nologo -optimize+ -platform:x64 -langversion:5 ("-out:" + (Join-Path $testOut "FastBoot.Tests.exe")) `
-        ("-r:" + (Join-Path $managed "Assembly-CSharp.dll")) ("-r:" + (Join-Path $managed "UnityEngine.CoreModule.dll")) `
+        ("-r:" + (Join-Path $managed "Assembly-CSharp.dll")) ("-r:" + (Join-Path $managed "UnityEngine.CoreModule.dll")) ("-r:" + (Join-Path $managed "UnityEngine.AudioModule.dll")) `
         ("-r:" + (Join-Path $managed "UnityEngine.dll")) ("-r:" + $harmony) ("-r:" + (Join-Path $mod "Plugins\FastBoot.dll")) @testSources
 }
 Write-Output "built $mod"

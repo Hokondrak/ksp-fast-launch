@@ -38,7 +38,7 @@ try {
 } finally { Pop-Location }
 
 # diagnostics exercises Unity-specific paths and the stall sampler, so it only runs on desktop .NET.
-$commands = "diff", "allowlist", "config-patch-kspcf-first", "config-patch-fastboot-first", "config-patch-standalone", "diagnostics"
+$commands = "diff", "allowlist", "config-patch-kspcf-first", "config-patch-fastboot-first", "config-patch-standalone", "lookups", "diagnostics"
 foreach ($c in $commands) {
     Write-Output "== $c (desktop .NET)"
     & $runner $c --ksp $Ksp --dist $dist --cases $FuzzCases

@@ -33,6 +33,8 @@ namespace FastBoot
             if (settings.Profile.Length > 0)
                 StartProfiler(home, settings.Profile);
             PartDatabaseWatch.Note(KSPUtil.ApplicationRootPath, "when FastBoot's addon started");
+            if (settings.FastLookups)
+                Lookups.AudioLookupPatch.Install();
             if (settings.ConfigParser)
             {
                 if (ConfigLoadPatch.Installed)
