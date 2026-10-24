@@ -2,7 +2,7 @@
 
 ## Unreleased (0.1.0)
 
-Not yet run in game; see "Not done yet" in the README.
+First in-game results on the reference install: a cold launch went from 139 s to 65 s. See the README.
 
 - Config parser: GameData `.cfg` loads served from the native kspcfg parser with stock-identical results,
   pre-parsed on worker threads and served for as long as each file is unchanged, so both config passes use it.

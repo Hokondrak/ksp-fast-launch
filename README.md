@@ -3,9 +3,24 @@
 A Kerbal Space Program 1.12 mod that shortens the time from desktop to main menu on heavily modded installs,
 without changing what the game loads.
 
-> **Status: pre-release, not yet validated in game.** Everything below passes offline tests against a large real
-> install (the Jool Odyssey modpack), including inside KSP's own Mono runtime, but FastBoot has not yet been run inside the game.
-> Do not install it on a save you care about yet.
+> **Status: pre-release, one machine.** Everything below passes offline tests against a large real install
+> (the Jool Odyssey modpack), including inside KSP's own Mono runtime, and has run in the game on that install.
+> It has not been tested on any other machine or install yet.
+
+## Measured
+
+Reference install: KSP 1.12.5, Jool Odyssey modpack (1,489 parts, 4,126 cfg files, 10.8 GB GameData), Ryzen 9
+7945HX, 32 GB RAM, NVMe SSD. Desktop to main menu, from BootProfiler:
+
+| Launch | Without FastBoot | With FastBoot (early start) |
+| --- | ---: | ---: |
+| Cold (first launch after a reboot) | 139 s | **65 s** |
+| Warm (files already cached) | 61–62 s | not yet measured |
+
+The cold launch is now about as fast as a warm one. With FastBoot, the warm-up read 12.6 GB on 8 threads in
+13.8 s, and the config parser served 8,032 loads across both config passes in 2.0 s of main-thread time. The
+game compiled the same 1,489 parts and 586 internal spaces as without it. One run each, so read the numbers as
+indicative.
 
 ## What it does
 
@@ -43,7 +58,7 @@ the stock code and 5.7 s through kspcfg. That is a measurement of the parser alo
   prefix is patched to step aside for files FastBoot already served, so nothing is parsed twice. KSPCF's other
   ConfigNode patches keep working.
 - **KspFastCfg** and **BootProfiler** (the research prototypes this mod grew from): FastBoot detects them and leaves
-  the corresponding feature to them.
+  the corresponding feature to them. Remove KspFastCfg: it never loaded its native library in game.
 - **ModuleManager**: unaffected. `ModuleManager.ConfigCache` loads to the same tree as before.
 
 ## Install (once released)
@@ -68,21 +83,21 @@ Settings are in `GameData/FastBoot/FastBoot.cfg`:
 
 Open, and waiting on measurements or analysis:
 
-- **Cold-start warm-up gain**: needs a launch after a reboot to measure.
 - **Part compilation**, which grows with the number of parts (about 7 ms each; 10.5 s for the reference
   install's 1,489 parts): not yet analysed.
-- **Speed claims** for whole launches.
+- **Launches after a mod change**: ModuleManager re-patches everything (about 10 s of waiting here), and part
+  compilation took twice as long (20 s) in both such runs. The cause of the second is not yet known.
+- **Warm-launch gain** with FastBoot, and repeated runs of every number above.
 
 Measured and ruled out: a larger initial GC heap (`GC_INITIAL_HEAP_SIZE=4G`) made no difference (61 s against
 62 s). The multi-minute texture and planet-setup freezes seen earlier came from a missing dependency (KSPBurst,
 needed by Parallax), not from KSP itself.
 
-Needs validation in game before a release:
+Needs validation before a release:
 
-- Every FastBoot feature inside the game (offline tests cover the logic, not Unity).
-- That the early start's hook point behaves under Unity's player as it does under `monohost`. The player names
-  its Mono domain "Unity Root Domain" and has no child-domain string, which suggests the game runs in the
-  domain the loader sees. That is inferred from the binary, not observed.
+- Other machines and installs, including a spinning disk and a machine with less memory.
+- The GameData-only fallback (no `version.dll`), which has not run in game; and diagnostics inside FastBoot
+  (the in-game runs used the separate BootProfiler).
 - Linux and macOS: the C# side and kspcfg are written for them; no build has been run there.
 
 ## Building
