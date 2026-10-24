@@ -33,6 +33,10 @@ namespace FastBoot
         /// "restore" to reuse the cubes of unchanged, verified parts (DragCubes.DragCubeReuse).
         public string DragCubeCache = "off";
 
+        /// Record Mono's runtime counters (JIT time, methods compiled, classes loaded) into early.log. Read by the
+        /// early-start loader, which must enable them before Mono starts; listed here so the key is known.
+        public bool MonoCounters;
+
         /// Name of a boot stretch to profile continuously (Diagnostics.PhaseProfiler.Windows), or empty for none.
         public string Profile = "";
 
@@ -52,6 +56,7 @@ namespace FastBoot
                     case "Warmup": s.Warmup = Bool(kv, s.Warmup); break;
                     case "FastLookups": s.FastLookups = Bool(kv, s.FastLookups); break;
                     case "DragCubeCache": s.DragCubeCache = kv.Value; break;
+                    case "MonoCounters": s.MonoCounters = Bool(kv, s.MonoCounters); break;
                     case "Profile": s.Profile = kv.Value; break;
                     default: Log.Warning("unknown setting '" + kv.Key + "' in " + path); break;
                 }

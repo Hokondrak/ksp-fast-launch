@@ -68,6 +68,7 @@ namespace FastBoot.Tests
                 case "lookups": return LookupsTest.Run(opts);
                 case "dragcubes": return DragCubesTest.Run(opts);
                 case "il": return IlDump.Run(opts); // developer tool: --out Type.Method
+                case "refs": return IlRefs.Run(opts); // developer tool: --out Type.Member
                 default: return Usage();
             }
         }

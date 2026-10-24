@@ -5,7 +5,7 @@
 //! their import tables. At the main menu FastBoot's addon calls [`fastboot_early_boot_finished`], which removes the
 //! hooks and saves what was opened as `readlist.txt`, the exact order for the next launch's warm-up.
 
-use crate::{iat, log, win};
+use crate::{counters, early, iat, log, win};
 use fastboot_warm::{readlist, record::Recorder, run, settings};
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
@@ -123,6 +123,12 @@ unsafe fn boot_finished() -> i32 {
         }
     }
     log::line(&warmup_summary());
+    let mono = early::mono_module();
+    if !mono.is_null() {
+        for line in counters::read(mono, early::real_get_proc_address()) {
+            log::line(&format!("mono counter: {}", line));
+        }
+    }
     i32::try_from(n).unwrap_or(i32::MAX)
 }
 

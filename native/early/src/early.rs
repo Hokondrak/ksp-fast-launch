@@ -1,6 +1,6 @@
 //! The hook chain: player's `GetProcAddress` -> `mono_jit_init_version` -> `FastBoot.Early.Bootstrap.Start`.
 
-use crate::{boot_reads, iat, log, win};
+use crate::{boot_reads, counters, iat, log, win};
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -24,6 +24,8 @@ struct Config {
     assembly: PathBuf,
     /// Module whose imports are hooked. `FASTBOOT_EARLY_TARGET`, else `UnityPlayer.dll`.
     target: String,
+    /// `MonoCounters = true` in FastBoot.cfg (or `FASTBOOT_MONO_COUNTERS=1`): record Mono's runtime counters.
+    mono_counters: bool,
 }
 
 impl Config {
@@ -37,7 +39,10 @@ impl Config {
             None => root.join("GameData").join("FastBoot").join("Plugins").join("FastBoot.dll"),
         };
         let target = std::env::var("FASTBOOT_EARLY_TARGET").unwrap_or_else(|_| "UnityPlayer.dll".into());
-        Some(Config { root, assembly, target })
+        let cfg = assembly.parent().and_then(Path::parent).unwrap_or(&root).join("FastBoot.cfg");
+        let mono_counters = std::env::var("FASTBOOT_MONO_COUNTERS").is_ok_and(|v| v == "1")
+            || fastboot_warm::settings::read_bool(&cfg, "MonoCounters", false);
+        Some(Config { root, assembly, target, mono_counters })
     }
 
     /// GameData/FastBoot/PluginData, next to the assembly's Plugins folder.
@@ -90,7 +95,12 @@ pub unsafe fn attach() {
     }
 }
 
-unsafe fn real_get_proc_address() -> GetProcAddressFn {
+/// Mono's module, once the player asked for `mono_jit_init_version`; null before.
+pub(crate) fn mono_module() -> win::Hmodule {
+    MONO.load(Ordering::Acquire) as win::Hmodule
+}
+
+pub(crate) unsafe fn real_get_proc_address() -> GetProcAddressFn {
     std::mem::transmute(REAL_GET_PROC_ADDRESS.load(Ordering::Acquire))
 }
 
@@ -111,6 +121,10 @@ unsafe extern "system" fn get_proc_address(module: win::Hmodule, name: *const c_
 
 unsafe extern "C" fn jit_init_version(name: *const c_char, version: *const c_char) -> *mut c_void {
     let real: JitInitFn = std::mem::transmute(REAL_JIT_INIT.load(Ordering::Acquire));
+    // Mono registers its counters while it initialises and skips sections not enabled by then.
+    if CONFIG.get().is_some_and(|c| c.mono_counters) && counters::enable(mono_module(), real_get_proc_address()) {
+        log::line("Mono counters enabled");
+    }
     let domain = real(name, version);
     unhook();
     if domain.is_null() {

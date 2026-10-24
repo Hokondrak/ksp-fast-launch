@@ -25,6 +25,8 @@
 #[cfg(windows)]
 mod boot_reads;
 #[cfg(windows)]
+mod counters;
+#[cfg(windows)]
 mod early;
 #[cfg(windows)]
 mod iat;

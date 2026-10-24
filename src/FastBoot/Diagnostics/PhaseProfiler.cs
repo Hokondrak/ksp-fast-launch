@@ -38,6 +38,13 @@ namespace FastBoot.Diagnostics
                 Start = new[] { "PartLoader: Loading part database", "PartLoader: Creating part database" },
                 Stop = "PartLoader: Compiling Internal Prop",
             },
+            // The whole load: from the first log line after FastBoot's addon starts to the main menu.
+            new Window
+            {
+                Name = "boot",
+                Start = new[] { "" },
+                Stop = "[HighLogic]: =========================== Scene Change : From LOADING to MAINMENU",
+            },
         };
 
         internal static string OutputDirectory;
@@ -89,9 +96,12 @@ namespace FastBoot.Diagnostics
                 End(null);
         }
 
+        private DateTime startedAt;
+
         private void Begin()
         {
             running = true;
+            startedAt = DateTime.Now;
             clock.Start();
             thread = new Thread(SampleLoop) { IsBackground = true, Name = "FastBoot profiler", Priority = System.Threading.ThreadPriority.AboveNormal };
             thread.Start();
@@ -122,7 +132,8 @@ namespace FastBoot.Diagnostics
                 string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
                 Directory.CreateDirectory(OutputDirectory);
                 string md = Path.Combine(OutputDirectory, Selected.Name + "-profile-" + stamp + ".md");
-                File.WriteAllText(md, Summarize(samples, clock.Elapsed.TotalSeconds, Selected, note));
+                string started = "Started " + startedAt.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + " (local time).";
+                File.WriteAllText(md, started + Environment.NewLine + Environment.NewLine + Summarize(samples, clock.Elapsed.TotalSeconds, Selected, note));
                 File.WriteAllLines(Path.ChangeExtension(md, ".tsv"),
                     new[] { "t_s\tmodule\tframes (innermost first)" }.Concat(samples.Select(s =>
                         s.T.ToString("F4", CultureInfo.InvariantCulture) + "\t" + s.Module + "\t" + string.Join(" < ", s.Managed.Select(Clean).ToArray()))).ToArray());

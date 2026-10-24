@@ -66,6 +66,7 @@ if (-not $SkipMono) {
     $env:FASTBOOT_EARLY_ASSEMBLY = Join-Path $dist "GameData\FastBoot\Plugins\FastBoot.dll"
     # The warm-up runs for real but stops after 64 MiB: enough to exercise it, not enough to churn the cache.
     $env:FASTBOOT_WARMUP_BUDGET_MB = "64"
+    $env:FASTBOOT_MONO_COUNTERS = "1"
     try {
         $earlyLog = Join-Path $dist "GameData\FastBoot\PluginData\early.log"
         foreach ($c in "early-chain", "early-chain-off", "early-chain-foreign") {
@@ -78,7 +79,7 @@ if (-not $SkipMono) {
             $results["$c (KSP's Mono)"] = $LASTEXITCODE -eq 0
         }
     } finally {
-        "FASTBOOT_EARLY_TARGET", "FASTBOOT_EARLY_ROOT", "FASTBOOT_EARLY_ASSEMBLY", "FASTBOOT_EARLY_DISABLE", "FASTBOOT_WARMUP_BUDGET_MB" |
+        "FASTBOOT_EARLY_TARGET", "FASTBOOT_EARLY_ROOT", "FASTBOOT_EARLY_ASSEMBLY", "FASTBOOT_EARLY_DISABLE", "FASTBOOT_WARMUP_BUDGET_MB", "FASTBOOT_MONO_COUNTERS" |
             ForEach-Object { Remove-Item "env:$_" -ErrorAction SilentlyContinue }
     }
 }
