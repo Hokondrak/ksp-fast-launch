@@ -4,7 +4,8 @@
 //   FastBoot.Tests.exe <command> --ksp <KSP folder> --dist <build output folder> [--cases N]
 //
 // Commands: diff, allowlist, config-patch-kspcf-first, config-patch-fastboot-first, config-patch-standalone,
-//           diagnostics, early-chain, early-chain-off (these two only under monohost --preload version.dll)
+//           diagnostics, early-chain, early-chain-off, early-chain-foreign (these three only under monohost
+//           --preload version.dll)
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -61,8 +62,9 @@ namespace FastBoot.Tests
                 case "config-patch-fastboot-first": return ConfigPatchTest.Run(opts, ConfigPatchTest.Scenario.FastBootFirst);
                 case "config-patch-standalone": return ConfigPatchTest.Run(opts, ConfigPatchTest.Scenario.Standalone);
                 case "diagnostics": return DiagnosticsTest.Run(opts);
-                case "early-chain": return EarlyChainTest.Run(opts, true);
-                case "early-chain-off": return EarlyChainTest.Run(opts, false);
+                case "early-chain": return EarlyChainTest.Run(opts, EarlyChainTest.Mode.Enabled);
+                case "early-chain-off": return EarlyChainTest.Run(opts, EarlyChainTest.Mode.Disabled);
+                case "early-chain-foreign": return EarlyChainTest.Run(opts, EarlyChainTest.Mode.Foreign);
                 default: return Usage();
             }
         }
@@ -92,7 +94,7 @@ namespace FastBoot.Tests
         private static int Usage()
         {
             Console.WriteLine("usage: FastBoot.Tests.exe <diff|allowlist|config-patch-kspcf-first|config-patch-fastboot-first|"
-                + "config-patch-standalone|diagnostics|early-chain|early-chain-off> --ksp <KSP folder> --dist <build output> [--cases N] [--out file] [--gamedata dir]");
+                + "config-patch-standalone|diagnostics|early-chain|early-chain-off|early-chain-foreign> --ksp <KSP folder> --dist <build output> [--cases N] [--out file] [--gamedata dir]");
             return 2;
         }
     }

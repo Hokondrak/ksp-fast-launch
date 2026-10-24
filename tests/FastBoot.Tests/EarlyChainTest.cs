@@ -18,10 +18,19 @@ namespace FastBoot.Tests
     /// - every cfg loads to the stock tree in two passes (KSP's scan and KSPCF's), both from the prefetch,
     /// - KSPCF's own parser runs only for files FastBoot declines,
     /// - the warm-up ran, and the main-menu call saved a read list of the files the run opened.
-    /// With the loader switched off (FASTBOOT_EARLY_DISABLE=1) nothing may happen at all.
+    /// With the loader switched off (FASTBOOT_EARLY_DISABLE=1) nothing may happen but a log line. In a process
+    /// that is not the game (its target module is not loaded, like Unity's crash handler, which also loads
+    /// version.dll) it must not even write the log.
     internal static class EarlyChainTest
     {
-        public static int Run(Options o, bool loaderEnabled)
+        public enum Mode
+        {
+            Enabled,
+            Disabled,
+            Foreign,
+        }
+
+        public static int Run(Options o, Mode mode)
         {
             // Read before this test touches anything: JIT-compiling Run already loaded Assembly-CSharp.
             bool started = Bootstrap.Started;
@@ -32,7 +41,14 @@ namespace FastBoot.Tests
             Console.WriteLine(log.TrimEnd());
 
             var failures = new List<string>();
-            if (!loaderEnabled)
+            if (mode == Mode.Foreign)
+            {
+                if (started) failures.Add("Bootstrap.Start ran in a process that is not the game");
+                if (installedOnGameLoad) failures.Add("config parser installed in a process that is not the game");
+                if (log.Length > 0) failures.Add("early.log was written in a process that is not the game");
+                return Report(failures, "outside the game the loader did nothing");
+            }
+            if (mode == Mode.Disabled)
             {
                 if (started) failures.Add("Bootstrap.Start ran although the loader was disabled");
                 if (installedOnGameLoad) failures.Add("config parser installed although the loader was disabled");

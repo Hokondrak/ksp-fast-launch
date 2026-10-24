@@ -65,6 +65,12 @@ impl Config {
 /// the warm-up thread and rewrites import slots.
 pub unsafe fn attach() {
     let Some(cfg) = Config::from_env() else { return };
+    // Other programs in the KSP folder load this file too (Unity's crash handler imports VERSION.dll). Outside the
+    // game, behave exactly like the system version.dll: no log, no warm-up, no hooks.
+    let target = win::GetModuleHandleW(win::wide(cfg.target.as_ref()).as_ptr());
+    if target.is_null() {
+        return;
+    }
     log::open(&cfg.plugin_data().join("early.log"));
     log::line(&format!("FastBoot early start {}; KSP folder {}", env!("CARGO_PKG_VERSION"), cfg.root.display()));
     if let Some(why) = cfg.disabled() {
@@ -72,11 +78,6 @@ pub unsafe fn attach() {
         return;
     }
     boot_reads::start(&cfg.root, &cfg.plugin_data());
-    let target = win::GetModuleHandleW(win::wide(cfg.target.as_ref()).as_ptr());
-    if target.is_null() {
-        log::line(&format!("off: {} is not loaded in this process", cfg.target));
-        return;
-    }
     boot_reads::record_opens_in(target, &cfg.target);
     let gpa = win::kernel32_get_proc_address();
     REAL_GET_PROC_ADDRESS.store(gpa, Ordering::Release);

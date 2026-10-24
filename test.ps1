@@ -67,8 +67,12 @@ if (-not $SkipMono) {
     # The warm-up runs for real but stops after 64 MiB: enough to exercise it, not enough to churn the cache.
     $env:FASTBOOT_WARMUP_BUDGET_MB = "64"
     try {
-        foreach ($c in "early-chain", "early-chain-off") {
+        $earlyLog = Join-Path $dist "GameData\FastBoot\PluginData\early.log"
+        foreach ($c in "early-chain", "early-chain-off", "early-chain-foreign") {
             $env:FASTBOOT_EARLY_DISABLE = if ($c -eq "early-chain-off") { "1" } else { "" }
+            # "foreign": a process without the target module, like Unity's crash handler.
+            $env:FASTBOOT_EARLY_TARGET = if ($c -eq "early-chain-foreign") { "UnityPlayer.dll" } else { "monohost.exe" }
+            if (Test-Path $earlyLog) { Remove-Item $earlyLog }
             Write-Output "== $c (KSP's Mono, loader preloaded)"
             & $monohost --ksp $Ksp --preload $loader -- $runner $c --ksp $Ksp --dist $dist --gamedata (Join-Path $mirror "GameData")
             $results["$c (KSP's Mono)"] = $LASTEXITCODE -eq 0
