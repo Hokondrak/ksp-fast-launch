@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["native/kspcfg", "native/early", "native/warm", "native/aotlink", "tools/ksplaunch", "tools/monohost"]
+members = ["native/kspcfg", "native/early", "native/warm", "native/aotlink", "tools/aot-compile", "tools/ksplaunch", "tools/monohost"]
 
 [workspace.package]
 version = "0.1.0"

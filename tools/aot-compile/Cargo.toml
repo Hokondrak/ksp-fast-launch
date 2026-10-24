@@ -1,0 +1,10 @@
+[package]
+name = "fastboot-aot-compile"
+description = "Offline partial-AOT cache builder using KSP's installed Mono, without launching Unity (written by Codex)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "aot-compile"
+path = "src/main.rs"

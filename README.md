@@ -96,7 +96,7 @@ Settings are in `GameData/FastBoot/FastBoot.cfg`:
 
 Open, and waiting on measurements or analysis:
 
-- **Precompiled managed code (AOT)**, on the `claude/aot` branch, not in the mod yet. Mono compiles about 28,000
+- **Precompiled managed code (AOT)**: tools in `native/aotlink` and `tools/aot-compile` (written by Codex), not used by the mod yet. Mono compiles about 28,000
   methods per boot, 2.7 s on the reference install (an 8.4 s reading was taken under heavy paging). KSP's own Mono
   contains an AOT compiler, `native/aotlink` turns its output into a loadable DLL without an external toolchain, and
   KSP code runs from such an image offline. Open: the net saving after verifying and loading the cache, and the
